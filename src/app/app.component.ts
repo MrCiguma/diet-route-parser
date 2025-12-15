@@ -76,11 +76,13 @@ function parseIntLoose(s: string): number {
 }
 
 function parseDurationSeconds(line: string): number | null {
-  const m = line.match(/\bIn\s+(\d+):(\d{2}):(\d{2})\b/);
+  // Accept 1–2 digits for hh/mm/ss because Travian sometimes uses "0:03:18"
+  const m = line.match(/\bIn\s+(\d{1,2}):(\d{1,2}):(\d{1,2})\b/i);
   if (!m) return null;
-  return (
-    parseInt(m[1], 10) * 3600 + parseInt(m[2], 10) * 60 + parseInt(m[3], 10)
-  );
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  const s = parseInt(m[3], 10);
+  return h * 3600 + min * 60 + s;
 }
 
 function cropIncomingByPlayerNextHour(
@@ -90,35 +92,48 @@ function cropIncomingByPlayerNextHour(
     .split('\n')
     .map((l) => l.trim())
     .filter(Boolean);
+
   const totals = new Map<string, { crop: number; deliveries: number }>();
 
-  for (let i = 0; i < lines.length; i++) {
-    const durSec = parseDurationSeconds(lines[i]);
-    if (durSec === null || durSec > 3600) continue;
+  let currentPlayer: string | null = null;
+  let nums: number[] = [];
 
-    const transportLine = lines[i + 1] || '';
-    const tm = transportLine.match(/^Transport from\s+(.+?)\s*:\s*(.+)$/);
-    if (!tm) continue;
-
-    const player = tm[2].trim();
-
-    const nums: number[] = [];
-    for (let j = i + 2; j < Math.min(i + 12, lines.length); j++) {
-      const l = lines[j];
-      if (l.startsWith('In ') || l.startsWith('Transport from')) break;
-
-      const n = parseIntLoose(l);
-      if (n !== 0 && !(n === 1 && l.includes('×'))) nums.push(n);
-    }
-
+  const flushIfValid = (durSec: number) => {
     const crop = nums.length ? nums[nums.length - 1] : 0;
-    if (crop <= 0) continue;
+    if (!currentPlayer || durSec > 3600 || crop <= 0) return;
 
-    const prev = totals.get(player) || { crop: 0, deliveries: 0 };
-    totals.set(player, {
+    const prev = totals.get(currentPlayer) || { crop: 0, deliveries: 0 };
+    totals.set(currentPlayer, {
       crop: prev.crop + crop,
       deliveries: prev.deliveries + 1,
     });
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Start of a shipment block
+    const tm = line.match(/^Transport from\s+(.+?)\s*:\s*(.+)$/i);
+    if (tm) {
+      currentPlayer = tm[2].trim();
+      nums = [];
+      continue;
+    }
+
+    // Collect resource numbers while inside a block
+    if (currentPlayer) {
+      const durSec = parseDurationSeconds(line);
+      if (durSec !== null) {
+        // End of block: "In ..."
+        flushIfValid(durSec);
+        currentPlayer = null;
+        nums = [];
+        continue;
+      }
+
+      const n = parseIntLoose(line);
+      if (n !== 0 && !(n === 1 && line.includes('×'))) nums.push(n);
+    }
   }
 
   return totals;
