@@ -6,7 +6,9 @@
     "start": "ng serve",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "build:gh": "ng build --configuration production && copy dist\\diet-route-parser\\browser\\index.html dist\\diet-route-parser\\browser\\404.html",
+    "deploy": "npm run build:gh && npx angular-cli-ghpages --dir=dist/diet-route-parser/browser"
   },
   "private": true,
   "dependencies": {

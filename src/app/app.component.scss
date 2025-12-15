@@ -1,0 +1,201 @@
+:host {
+  display: block;
+  min-height: 100vh;
+  background: #0b1020;
+  color: #e8ecf6;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell,
+    "Noto Sans", Arial, sans-serif;
+}
+
+.page {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 48px 20px 64px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+}
+
+.subtitle {
+  margin: 6px 0 0;
+  color: #aeb7d6;
+  font-size: 14px;
+}
+
+.card {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(10px);
+}
+
+label {
+  display: block;
+  font-size: 13px;
+  color: #c6cdef;
+  margin-bottom: 8px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+textarea {
+  width: 100%;
+  max-width: 100%;
+  display: block;
+  resize: vertical;
+  min-height: 280px;
+
+  padding: 14px 14px;
+  border-radius: 12px;
+
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.35);
+  color: #e8ecf6;
+
+  font-size: 14px;
+  line-height: 1.45;
+
+  outline: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+textarea::placeholder {
+  color: rgba(232, 236, 246, 0.45);
+}
+
+textarea:focus {
+  border-color: rgba(125, 155, 255, 0.65);
+  box-shadow: 0 0 0 4px rgba(125, 155, 255, 0.18);
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+
+  color: #aeb7d6;
+  font-size: 12px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  color: #cdd5f3;
+  font-size: 12px;
+}
+.btn {
+  margin-top: 12px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: #2d3cff;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: #3f4dff;
+}
+
+.tbl {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 6px;
+}
+
+.tbl th,
+.tbl td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.tbl th {
+  text-align: left;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #aeb7d6;
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.howto {
+  margin-top: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+}
+
+.howto > summary {
+  cursor: pointer;
+  padding: 12px 14px;
+  list-style: none;
+  user-select: none;
+  font-weight: 650;
+  color: #cdd5f3;
+}
+
+.howto > summary::-webkit-details-marker {
+  display: none;
+}
+
+.howto > summary::after {
+  content: "▾";
+  float: right;
+  opacity: 0.8;
+  transition: transform 140ms ease;
+}
+
+.howto[open] > summary::after {
+  transform: rotate(180deg);
+}
+
+.howto-body {
+  padding: 0 14px 14px;
+  color: #aeb7d6;
+  font-size: 13px;
+}
+
+.howto-body ol {
+  margin: 10px 0 8px 18px;
+}
+
+.howto-body li {
+  margin: 6px 0;
+}
+
+.hint {
+  margin: 8px 0 0;
+  opacity: 0.9;
+}
