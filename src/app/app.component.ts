@@ -9,6 +9,18 @@ interface PlayerRow {
   deliveries: number;
 }
 
+interface CropSwingResult {
+  totalIncoming: number;
+  ratePerSecond: number;
+  peakValue: number;
+  peakTimeSec: number;
+  peakTimeLabel: string;
+  troughValue: number;
+  troughTimeSec: number;
+  troughTimeLabel: string;
+  swing: number;
+}
+
 @Component({
   selector: 'app-root',
   standalone: true,
@@ -20,10 +32,12 @@ export class AppComponent {
   troopText = '';
   inputText = '';
   rows: PlayerRow[] = [];
+  cropSwing: CropSwingResult | null = null;
 
   parse() {
     const incoming = cropIncomingByPlayerNextHour(this.inputText);
     const consumption = consumptionByPlayerPerHour(this.troopText);
+    this.cropSwing = computeCropSwing(incomingDeliveriesNextHour(this.inputText));
 
     const players = new Set<string>([
       ...incoming.keys(),
@@ -137,6 +151,114 @@ function cropIncomingByPlayerNextHour(
   }
 
   return totals;
+}
+
+function incomingDeliveriesNextHour(
+  text: string
+): { crop: number; arrivalSec: number }[] {
+  const lines = sanitizeText(text)
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const deliveries: { crop: number; arrivalSec: number }[] = [];
+
+  let currentPlayer: string | null = null;
+  let nums: number[] = [];
+
+  const flushIfValid = (durSec: number) => {
+    const crop = nums.length ? nums[nums.length - 1] : 0;
+    if (!currentPlayer || durSec > 3600 || crop <= 0) return;
+    deliveries.push({ crop, arrivalSec: durSec });
+  };
+
+  for (const line of lines) {
+    const tm = line.match(/^Transport from\s+(.+?)\s*:\s*(.+)$/i);
+    if (tm) {
+      currentPlayer = tm[2].trim();
+      nums = [];
+      continue;
+    }
+
+    if (currentPlayer) {
+      const durSec = parseDurationSeconds(line);
+      if (durSec !== null) {
+        flushIfValid(durSec);
+        currentPlayer = null;
+        nums = [];
+        continue;
+      }
+
+      const n = parseIntLoose(line);
+      if (n !== 0 && !(n === 1 && line.includes('×'))) nums.push(n);
+    }
+  }
+
+  return deliveries;
+}
+
+// Simulates crop stock over the next hour, assuming a constant consumption
+// rate equal to the hour's total incoming crop (so net change over the full
+// hour is zero) while deliveries land as instantaneous lumps at their ETA.
+// Returns the highest and lowest points that stock reaches during the hour.
+function computeCropSwing(
+  deliveries: { crop: number; arrivalSec: number }[],
+  horizonSec = 3600
+): CropSwingResult | null {
+  if (!deliveries.length) return null;
+
+  const totalIncoming = deliveries.reduce((s, d) => s + d.crop, 0);
+  const ratePerSecond = totalIncoming / horizonSec;
+  const sorted = [...deliveries].sort((a, b) => a.arrivalSec - b.arrivalSec);
+
+  let stock = 0;
+  let prevTime = 0;
+  let peakValue = 0;
+  let peakTimeSec = 0;
+  let troughValue = 0;
+  let troughTimeSec = 0;
+
+  const record = (time: number, value: number) => {
+    if (value > peakValue) {
+      peakValue = value;
+      peakTimeSec = time;
+    }
+    if (value < troughValue) {
+      troughValue = value;
+      troughTimeSec = time;
+    }
+  };
+
+  for (const d of sorted) {
+    stock -= ratePerSecond * (d.arrivalSec - prevTime);
+    record(d.arrivalSec, stock);
+    stock += d.crop;
+    record(d.arrivalSec, stock);
+    prevTime = d.arrivalSec;
+  }
+
+  stock -= ratePerSecond * (horizonSec - prevTime);
+  record(horizonSec, stock);
+
+  return {
+    totalIncoming,
+    ratePerSecond,
+    peakValue,
+    peakTimeSec,
+    peakTimeLabel: formatClock(peakTimeSec),
+    troughValue,
+    troughTimeSec,
+    troughTimeLabel: formatClock(troughTimeSec),
+    swing: peakValue - troughValue,
+  };
+}
+
+function formatClock(totalSec: number): string {
+  const s = Math.max(0, Math.round(totalSec));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
 }
 
 function consumptionByPlayerPerHour(text: string): Map<string, number> {
