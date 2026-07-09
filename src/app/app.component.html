@@ -36,6 +36,19 @@
     </div>
   </div>
 
+  <div class="card" *ngIf="cropSwing">
+    <label>Crop swing over the next hour</label>
+    <p class="subtitle">
+      Assumes consumption is spread evenly across the hour at a rate equal to
+      total incoming crop, while deliveries land as lump sums at their ETA.
+    </p>
+    <div class="meta">
+      <span class="badge">Peak {{ cropSwing?.peakValue | number:'1.0-0' }} &#64; {{ cropSwing?.peakTimeLabel }}</span>
+      <span class="badge">Trough {{ cropSwing?.troughValue | number:'1.0-0' }} &#64; {{ cropSwing?.troughTimeLabel }}</span>
+      <span class="badge">Swing {{ cropSwing?.swing | number:'1.0-0' }}</span>
+    </div>
+  </div>
+
   <div class="card" *ngIf="rows.length">
     <table class="tbl" *ngIf="rows.length">
       <thead>
