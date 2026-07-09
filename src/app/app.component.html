@@ -36,19 +36,6 @@
     </div>
   </div>
 
-  <div class="card" *ngIf="cropSwing">
-    <label>Crop swing over the next hour</label>
-    <p class="subtitle">
-      Assumes consumption is spread evenly across the hour at a rate equal to
-      total incoming crop, while deliveries land as lump sums at their ETA.
-    </p>
-    <div class="meta">
-      <span class="badge">Peak {{ cropSwing?.peakValue | number:'1.0-0' }} &#64; {{ cropSwing?.peakTimeLabel }}</span>
-      <span class="badge">Trough {{ cropSwing?.troughValue | number:'1.0-0' }} &#64; {{ cropSwing?.troughTimeLabel }}</span>
-      <span class="badge">Swing {{ cropSwing?.swing | number:'1.0-0' }}</span>
-    </div>
-  </div>
-
   <div class="card" *ngIf="rows.length">
     <table class="tbl" *ngIf="rows.length">
       <thead>
@@ -70,6 +57,78 @@
         </tr>
       </tbody>
     </table>
+  </div>
+
+  <div class="card" *ngIf="cropSwing">
+    <label>Crop swing over the next hour</label>
+    <p class="subtitle">
+      Covers the rolling 60 minutes starting now. Assumes consumption is
+      spread evenly across that hour, at a rate equal to its total incoming
+      crop, while deliveries land as lump sums at their real arrival minute.
+      The dial wraps at :60, so time past the top of the hour continues in
+      the :00-now stretch on the left. Red patches are the holes where
+      stock runs into deficit.
+    </p>
+
+    <svg
+      class="swing-chart"
+      [attr.viewBox]="'0 0 ' + cropSwing.chart.width + ' ' + cropSwing.chart.height"
+      preserveAspectRatio="none"
+    >
+      <path class="area-positive" [attr.d]="cropSwing.chart.positiveFillPath"></path>
+      <path class="area-negative" [attr.d]="cropSwing.chart.negativeFillPath"></path>
+      <line
+        class="zero-line"
+        x1="0"
+        [attr.x2]="cropSwing.chart.width"
+        [attr.y1]="cropSwing.chart.zeroY"
+        [attr.y2]="cropSwing.chart.zeroY"
+      ></line>
+      <line
+        class="now-line"
+        [attr.x1]="cropSwing.chart.nowX"
+        [attr.x2]="cropSwing.chart.nowX"
+        y1="0"
+        [attr.y2]="cropSwing.chart.height - 16"
+      ></line>
+      <path class="swing-line" [attr.d]="cropSwing.chart.linePath"></path>
+      <circle
+        class="marker peak"
+        [attr.cx]="cropSwing.chart.peak.x"
+        [attr.cy]="cropSwing.chart.peak.y"
+        r="4"
+      ></circle>
+      <circle
+        class="marker trough"
+        [attr.cx]="cropSwing.chart.trough.x"
+        [attr.cy]="cropSwing.chart.trough.y"
+        r="4"
+      ></circle>
+      <text class="now-label" text-anchor="middle" [attr.x]="cropSwing.chart.nowX" y="10">now</text>
+      <text class="axis-label" x="2" [attr.y]="cropSwing.chart.height - 6">:00</text>
+      <text
+        class="axis-label"
+        text-anchor="middle"
+        [attr.x]="cropSwing.chart.width / 2"
+        [attr.y]="cropSwing.chart.height - 6"
+      >
+        :30
+      </text>
+      <text
+        class="axis-label"
+        text-anchor="end"
+        [attr.x]="cropSwing.chart.width - 2"
+        [attr.y]="cropSwing.chart.height - 6"
+      >
+        :60
+      </text>
+    </svg>
+
+    <div class="meta">
+      <span class="badge">Peak {{ cropSwing.peakValue | number:'1.0-0' }} &#64; {{ cropSwing.peakTimeLabel }}</span>
+      <span class="badge">Trough {{ cropSwing.troughValue | number:'1.0-0' }} &#64; {{ cropSwing.troughTimeLabel }}</span>
+      <span class="badge">Swing {{ cropSwing.swing | number:'1.0-0' }}</span>
+    </div>
   </div>
 
   <details class="howto">

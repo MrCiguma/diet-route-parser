@@ -199,3 +199,61 @@ textarea:focus {
   margin: 8px 0 0;
   opacity: 0.9;
 }
+
+.swing-chart {
+  width: 100%;
+  height: 200px;
+  margin-top: 10px;
+  display: block;
+  overflow: visible;
+}
+
+.zero-line {
+  stroke: rgba(232, 236, 246, 0.35);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.now-line {
+  stroke: #ffd166;
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+
+.now-label {
+  fill: #ffd166;
+  font-size: 10px;
+}
+
+.area-positive {
+  fill: rgba(93, 214, 150, 0.28);
+}
+
+.area-negative {
+  fill: rgba(255, 92, 92, 0.38);
+}
+
+.swing-line {
+  fill: none;
+  stroke: #7d9bff;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.marker {
+  stroke: #0b1020;
+  stroke-width: 1.5;
+}
+
+.marker.peak {
+  fill: #5dd696;
+}
+
+.marker.trough {
+  fill: #ff5c5c;
+}
+
+.axis-label {
+  fill: #aeb7d6;
+  font-size: 10px;
+}
