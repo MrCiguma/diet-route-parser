@@ -1,0 +1,130 @@
+.card + .card {
+  margin-top: 16px;
+}
+
+.coord-row {
+  display: flex;
+  gap: 10px;
+}
+
+.coord-row input {
+  flex: 1;
+}
+
+select {
+  width: 100%;
+}
+
+.share-row {
+  display: flex;
+  gap: 10px;
+}
+
+.share-row input {
+  flex: 1;
+}
+
+.share-row .btn {
+  margin-top: 0;
+  white-space: nowrap;
+}
+
+.tbl input[type="number"] {
+  width: 70px;
+  text-align: right;
+}
+
+.total-crop {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: #aeb7d6;
+}
+
+.warnings {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  color: #ffb347;
+  font-size: 13px;
+}
+
+.warnings li {
+  margin: 4px 0;
+}
+
+.default-level-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 4px;
+}
+
+.default-level-row label {
+  margin-bottom: 0;
+}
+
+.default-level-row input {
+  width: 70px;
+}
+
+.howto,
+.params {
+  margin-top: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+}
+
+.params {
+  margin-top: 0;
+}
+
+.howto > summary,
+.params > summary {
+  cursor: pointer;
+  padding: 12px 14px;
+  list-style: none;
+  user-select: none;
+  font-weight: 650;
+  color: #cdd5f3;
+}
+
+.howto > summary::-webkit-details-marker,
+.params > summary::-webkit-details-marker {
+  display: none;
+}
+
+.howto > summary::after,
+.params > summary::after {
+  content: "▾";
+  float: right;
+  opacity: 0.8;
+  transition: transform 140ms ease;
+}
+
+.howto[open] > summary::after,
+.params[open] > summary::after {
+  transform: rotate(180deg);
+}
+
+.howto-body {
+  padding: 0 14px 14px;
+  color: #aeb7d6;
+  font-size: 13px;
+}
+
+.howto-body ol {
+  margin: 10px 0 8px 18px;
+}
+
+.howto-body li {
+  margin: 8px 0;
+}
+
+.params .field {
+  padding: 0 14px 14px;
+}
+
+.params .field:first-of-type {
+  padding-top: 2px;
+}
