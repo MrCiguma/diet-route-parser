@@ -50,6 +50,7 @@ export class RouteCreatorComponent implements OnInit {
   parsedVillages: ParsedVillage[] = [];
   defaultTradeOfficeLevel = 0;
   sourceVillageIndex: number | null = null;
+  arrivalOffsetMinutes = Math.floor(Math.random() * 60);
   routePlan: RoutePlan | null = null;
 
   shareUrl = '';
@@ -86,6 +87,11 @@ export class RouteCreatorComponent implements OnInit {
       this.maxSpreadHours = maxSpreadParam;
     }
 
+    const offsetParam = numberOrNull(params.get('arrivalOffset'));
+    if (offsetParam !== null && offsetParam >= 0 && offsetParam <= 59) {
+      this.arrivalOffsetMinutes = offsetParam;
+    }
+
     const sourceX = numberOrNull(params.get('sourceX'));
     const sourceY = numberOrNull(params.get('sourceY'));
     if (sourceX !== null && sourceY !== null) {
@@ -118,6 +124,7 @@ export class RouteCreatorComponent implements OnInit {
         merchantBonus: this.merchantBonus,
         defaultTradeOfficeLevel: this.defaultTradeOfficeLevel || null,
         maxSpreadHours: this.maxSpreadHours !== 1 ? this.maxSpreadHours : null,
+        arrivalOffset: this.arrivalOffsetMinutes,
         sourceX: source?.x ?? null,
         sourceY: source?.y ?? null,
         villages: this.parsedVillages.length
@@ -182,7 +189,8 @@ export class RouteCreatorComponent implements OnInit {
       this.merchantBonus ?? 0,
       villages,
       sourceIndex >= 0 ? sourceIndex : null,
-      this.maxSpreadHours
+      this.maxSpreadHours,
+      this.arrivalOffsetMinutes
     );
   }
 
@@ -292,6 +300,7 @@ export class RouteCreatorComponent implements OnInit {
       params['defaultTradeOfficeLevel'] = String(this.defaultTradeOfficeLevel);
     if (this.maxSpreadHours !== 1)
       params['maxSpreadHours'] = String(this.maxSpreadHours);
+    params['arrivalOffset'] = String(this.arrivalOffsetMinutes);
 
     const source =
       this.sourceVillageIndex !== null

@@ -175,7 +175,8 @@ export function computeRoutePlan(
   allianceBonusPercent: number,
   villages: RouteVillageInput[],
   sourceVillageIndex: number | null,
-  maxSpreadHours: number
+  maxSpreadHours: number,
+  arrivalOffsetMinutes: number
 ): RoutePlan {
   const warnings: string[] = [];
   const legs: RouteLeg[] = [];
@@ -427,10 +428,6 @@ export function computeRoutePlan(
   const sourceCapacityPerMerchant = source
     ? merchantCapacity(tribe, source.tradeOfficeLevel, allianceBonusPercent)
     : 0;
-
-  // Random per-session offset so players who all use this tool don't
-  // end up with convoys landing at the same clock minutes (:00, :30…).
-  const arrivalOffsetMinutes = Math.floor(Math.random() * 60);
 
   for (const stat of dietBound) {
     const hour = phaseHourByVillage.get(stat.village)!;

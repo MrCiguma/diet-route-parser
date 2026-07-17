@@ -65,6 +65,21 @@
           reach further with the same merchants.
         </p>
       </div>
+      <div class="field">
+        <label for="arrivalOffset">Arrival offset (minutes)</label>
+        <input
+          id="arrivalOffset"
+          type="number"
+          min="0"
+          max="59"
+          [(ngModel)]="arrivalOffsetMinutes"
+          (change)="onParamsChange()"
+        />
+        <p class="hint">
+          Shifts all arrival times by this many minutes (0–59). Change this so
+          your schedule doesn't overlap with other players using the same tool.
+        </p>
+      </div>
     </details>
 
     <div class="meta">
