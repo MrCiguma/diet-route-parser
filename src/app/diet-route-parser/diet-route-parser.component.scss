@@ -1,0 +1,108 @@
+.howto {
+  margin-top: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+}
+
+.howto > summary {
+  cursor: pointer;
+  padding: 12px 14px;
+  list-style: none;
+  user-select: none;
+  font-weight: 650;
+  color: #cdd5f3;
+}
+
+.howto > summary::-webkit-details-marker {
+  display: none;
+}
+
+.howto > summary::after {
+  content: "▾";
+  float: right;
+  opacity: 0.8;
+  transition: transform 140ms ease;
+}
+
+.howto[open] > summary::after {
+  transform: rotate(180deg);
+}
+
+.howto-body {
+  padding: 0 14px 14px;
+  color: #aeb7d6;
+  font-size: 13px;
+}
+
+.howto-body ol {
+  margin: 10px 0 8px 18px;
+}
+
+.howto-body li {
+  margin: 6px 0;
+}
+
+.hint {
+  margin: 8px 0 0;
+  opacity: 0.9;
+}
+
+.swing-chart {
+  width: 100%;
+  height: 200px;
+  margin-top: 10px;
+  display: block;
+  overflow: visible;
+}
+
+.zero-line {
+  stroke: rgba(232, 236, 246, 0.35);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.now-line {
+  stroke: #ffd166;
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+
+.now-label {
+  fill: #ffd166;
+  font-size: 10px;
+}
+
+.area-positive {
+  fill: rgba(93, 214, 150, 0.28);
+}
+
+.area-negative {
+  fill: rgba(255, 92, 92, 0.38);
+}
+
+.swing-line {
+  fill: none;
+  stroke: #7d9bff;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.marker {
+  stroke: #0b1020;
+  stroke-width: 1.5;
+}
+
+.marker.peak {
+  fill: #5dd696;
+}
+
+.marker.trough {
+  fill: #ff5c5c;
+}
+
+.axis-label {
+  fill: #aeb7d6;
+  font-size: 10px;
+}

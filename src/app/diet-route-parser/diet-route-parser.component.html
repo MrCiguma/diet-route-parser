@@ -1,0 +1,149 @@
+<div class="page">
+  <div class="header">
+    <div>
+      <h1>Route parser</h1>
+      <p class="subtitle">Crop incoming per player in the next hour</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <label for="input">Paste incoming deliveries</label>
+
+    <textarea
+      id="input"
+      placeholder="Paste the Travian incoming deliveries text here…"
+      rows="14"
+      (input)="inputText = $any($event.target).value"
+    ></textarea>
+
+    <div class="meta">
+      <button class="btn" (click)="parse()">Parse next hour</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <label for="troops">Paste troop overview (consumption)</label>
+
+    <textarea
+      id="troops"
+      placeholder="Paste the 'Troops in this village and its oases' overview here…"
+      rows="14"
+      (input)="troopText = $any($event.target).value"
+    ></textarea>
+
+    <div class="meta">
+      <button class="btn" (click)="parse()">Parse next hour</button>
+    </div>
+  </div>
+
+  <div class="card" *ngIf="rows.length">
+    <table class="tbl" *ngIf="rows.length">
+      <thead>
+        <tr>
+          <th>Player</th>
+          <th class="num">Incoming crop (≤ 1h)</th>
+          <th class="num">Consumption / hour</th>
+          <th class="num">Net (in - cons)</th>
+          <th class="num">Deliveries</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let r of rows" [class.total]="r.player === 'TOTAL'">
+          <td>{{ r.player }}</td>
+          <td class="num">{{ r.incomingCrop }}</td>
+          <td class="num">{{ r.consumption }}</td>
+          <td class="num">{{ r.net }}</td>
+          <td class="num">{{ r.deliveries }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card" *ngIf="cropSwing">
+    <label>Crop swing over the next hour</label>
+    <p class="subtitle">
+      Covers the rolling 60 minutes starting now. Assumes consumption is
+      spread evenly across that hour, at a rate equal to its total incoming
+      crop, while deliveries land as lump sums at their real arrival minute.
+      The dial wraps at :60, so time past the top of the hour continues in
+      the :00-now stretch on the left. Red patches are the holes where
+      stock runs into deficit.
+    </p>
+
+    <svg
+      class="swing-chart"
+      [attr.viewBox]="'0 0 ' + cropSwing.chart.width + ' ' + cropSwing.chart.height"
+      preserveAspectRatio="none"
+    >
+      <path class="area-positive" [attr.d]="cropSwing.chart.positiveFillPath"></path>
+      <path class="area-negative" [attr.d]="cropSwing.chart.negativeFillPath"></path>
+      <line
+        class="zero-line"
+        x1="0"
+        [attr.x2]="cropSwing.chart.width"
+        [attr.y1]="cropSwing.chart.zeroY"
+        [attr.y2]="cropSwing.chart.zeroY"
+      ></line>
+      <line
+        class="now-line"
+        [attr.x1]="cropSwing.chart.nowX"
+        [attr.x2]="cropSwing.chart.nowX"
+        y1="0"
+        [attr.y2]="cropSwing.chart.height - 16"
+      ></line>
+      <path class="swing-line" [attr.d]="cropSwing.chart.linePath"></path>
+      <circle
+        class="marker peak"
+        [attr.cx]="cropSwing.chart.peak.x"
+        [attr.cy]="cropSwing.chart.peak.y"
+        r="4"
+      ></circle>
+      <circle
+        class="marker trough"
+        [attr.cx]="cropSwing.chart.trough.x"
+        [attr.cy]="cropSwing.chart.trough.y"
+        r="4"
+      ></circle>
+      <text class="now-label" text-anchor="middle" [attr.x]="cropSwing.chart.nowX" y="10">now</text>
+      <text class="axis-label" x="2" [attr.y]="cropSwing.chart.height - 6">:00</text>
+      <text
+        class="axis-label"
+        text-anchor="middle"
+        [attr.x]="cropSwing.chart.width / 2"
+        [attr.y]="cropSwing.chart.height - 6"
+      >
+        :30
+      </text>
+      <text
+        class="axis-label"
+        text-anchor="end"
+        [attr.x]="cropSwing.chart.width - 2"
+        [attr.y]="cropSwing.chart.height - 6"
+      >
+        :60
+      </text>
+    </svg>
+
+    <div class="meta">
+      <span class="badge">Peak {{ cropSwing.peakValue | number:'1.0-0' }} &#64; {{ cropSwing.peakTimeLabel }}</span>
+      <span class="badge">Trough {{ cropSwing.troughValue | number:'1.0-0' }} &#64; {{ cropSwing.troughTimeLabel }}</span>
+      <span class="badge">Swing {{ cropSwing.swing | number:'1.0-0' }}</span>
+    </div>
+  </div>
+
+  <details class="howto">
+    <summary>How to use</summary>
+    <div class="howto-body">
+      <ol>
+        <li>Open Travian → marketplace → <b>Expand Incoming deliveries</b>.</li>
+        <li>Select all and copy (ctrl+a, ctrl+c).</li>
+        <li>Paste into the first textbox above.</li>
+        <li>Click <b>Parse next hour</b> to see crop totals per player.</li>
+        <li>
+          Go into rally point, troops in village. Ctrl+a, ctrl+c in the second
+          textbox
+        </li>
+      </ol>
+    </div>
+  </details>
+</div>

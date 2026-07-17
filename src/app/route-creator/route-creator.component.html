@@ -1,0 +1,264 @@
+<div class="page">
+  <div class="header">
+    <div>
+      <h1>Route creator</h1>
+      <p class="subtitle">Plan trade routes to feed your diet village</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <details class="params">
+      <summary>Parameters</summary>
+
+      <div class="field">
+        <label>Diet village coordinates</label>
+        <div class="coord-row">
+          <input
+            type="number"
+            placeholder="X"
+            [(ngModel)]="dietX"
+            (change)="onParamsChange()"
+          />
+          <input
+            type="number"
+            placeholder="Y"
+            [(ngModel)]="dietY"
+            (change)="onParamsChange()"
+          />
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="tribe">Player tribe</label>
+        <select id="tribe" [(ngModel)]="tribe" (change)="onParamsChange()">
+          <option value="">Select a tribe…</option>
+          <option *ngFor="let t of tribes" [value]="t.value">{{ t.label }}</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="merchantBonus">Merchant bonus</label>
+        <select
+          id="merchantBonus"
+          [(ngModel)]="merchantBonus"
+          (change)="onParamsChange()"
+        >
+          <option [ngValue]="null">Select a bonus…</option>
+          <option *ngFor="let b of merchantBonuses" [ngValue]="b">{{ b }}%</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="maxSpreadHours">Max route spread</label>
+        <select
+          id="maxSpreadHours"
+          [(ngModel)]="maxSpreadHours"
+          (change)="onParamsChange()"
+        >
+          <option *ngFor="let h of spreadOptions" [ngValue]="h">
+            {{ h === 1 ? 'Hourly (no spread)' : 'Up to every ' + h + 'h' }}
+          </option>
+        </select>
+        <p class="hint">
+          Allows routes to fire less often than hourly (Travian offers every
+          2/3/4/6/8h) when that lets a village move more crop overall or
+          reach further with the same merchants.
+        </p>
+      </div>
+    </details>
+
+    <div class="meta">
+      <button class="btn" (click)="generateRoutes()">Generate routes</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <details class="params">
+      <summary>Paste village information</summary>
+
+      <div class="field">
+        <textarea
+          id="villageInfo"
+          placeholder="Paste village name, coordinates, available merchants…"
+          rows="10"
+          [(ngModel)]="villageInfoText"
+        ></textarea>
+      </div>
+    </details>
+
+    <div class="meta">
+      <button class="btn" (click)="parseVillageInfo()">Parse villages</button>
+    </div>
+  </div>
+
+  <div class="card" *ngIf="parsedVillages.length">
+    <details class="params">
+      <summary>Trade office levels</summary>
+
+      <div class="field">
+        <div class="default-level-row">
+          <label for="defaultTradeOfficeLevel">Default level</label>
+          <input
+            id="defaultTradeOfficeLevel"
+            type="number"
+            min="0"
+            max="20"
+            [(ngModel)]="defaultTradeOfficeLevel"
+            (change)="onDefaultTradeOfficeLevelChange()"
+          />
+          <span class="hint">applies to villages still at 0</span>
+        </div>
+
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>Village</th>
+              <th class="num">Coordinates</th>
+              <th class="num">Merchants</th>
+              <th class="num">Trade office level</th>
+              <th class="num">Crop surplus/hour</th>
+              <th class="num">Source</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let v of parsedVillages; let i = index">
+              <td>{{ v.name }}</td>
+              <td class="num">{{ v.x !== null && v.y !== null ? '(' + v.x + '|' + v.y + ')' : '—' }}</td>
+              <td class="num">{{ v.merchantsTotal }}</td>
+              <td class="num">
+                <input
+                  type="number"
+                  min="0"
+                  max="20"
+                  [(ngModel)]="v.tradeOfficeLevel"
+                  (change)="onParamsChange()"
+                />
+              </td>
+              <td class="num">
+                <input
+                  type="number"
+                  min="0"
+                  [(ngModel)]="v.cropSurplusPerHour"
+                  (change)="onParamsChange()"
+                />
+              </td>
+              <td class="num">
+                <input
+                  type="radio"
+                  name="sourceVillage"
+                  [checked]="sourceVillageIndex === i"
+                  (change)="onSourceVillageChange(i)"
+                />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+  </div>
+
+  <div class="card" *ngIf="routePlan">
+    <label>Route plan</label>
+
+    <table class="tbl" *ngIf="routePlan.legs.length">
+      <thead>
+        <tr>
+          <th>From</th>
+          <th>To</th>
+          <th class="num">Crop/shipment</th>
+          <th class="num">Interval</th>
+          <th class="num">Departs</th>
+          <th class="num">Arrives</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let leg of sortedLegs">
+          <td>{{ leg.fromVillage }}</td>
+          <td>{{ leg.toVillage }}</td>
+          <td class="num">{{ leg.cropPerHour * leg.intervalHours | number:'1.0-0' }} ({{ leg.merchantsPerFiring }})</td>
+          <td class="num">every {{ leg.intervalHours }}h</td>
+          <td class="num">{{ formatMinute(leg.departureMinute) }}</td>
+          <td class="num">{{ formatMinute(leg.arrivalMinute) }}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p class="total-crop" *ngIf="routePlan.legs.length">
+      Total to Diet: <strong>{{ totalCropPerHour | number:'1.0-0' }} crop/hour</strong>
+    </p>
+
+    <ul class="warnings" *ngIf="routePlan.warnings.length">
+      <li *ngFor="let w of routePlan.warnings">{{ w }}</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <label>Share this configuration</label>
+    <div class="share-row">
+      <input type="text" [value]="shareUrl" readonly />
+      <button class="btn" (click)="copyShareLink()">
+        {{ linkCopied ? 'Copied!' : 'Copy link' }}
+      </button>
+    </div>
+  </div>
+
+  <details class="howto">
+    <summary>How to use this (first time here? start here)</summary>
+    <div class="howto-body">
+      <ol>
+        <li>
+          Open <b>Parameters</b> and fill in the <b>Diet village
+          coordinates</b> (the village you're feeding crop into), your
+          <b>player tribe</b>, and your alliance's <b>merchant bonus</b> if it
+          has one. Leave <b>Max route spread</b> at "Hourly" unless a village
+          is too far away to route hourly, or you want to try squeezing out
+          more total crop by letting routes fire less often with bigger
+          convoys.
+        </li>
+        <li>
+          Open <b>Paste village information</b> and paste in your Travian
+          village overview (resource + merchants table, plus the "Currently
+          building" list further down the page — copy the whole page). Click
+          <b>Parse villages</b>. Skip this step if you opened a shared link
+          that already came with villages built in.
+        </li>
+        <li>
+          Open <b>Trade office levels</b>. Set a <b>Default level</b> to
+          apply it to every village at once, then fine-tune individual
+          villages if some differ.
+        </li>
+        <li>
+          In that same table, fill in each village's <b>Crop
+          surplus/hour</b> — how much crop it can spare on top of its own
+          consumption. A village left at 0 sends nothing.
+        </li>
+        <li>
+          If one village is meant to feed the others (a strong producer that
+          relays crop onward through your other villages before it reaches
+          Diet), mark it as the <b>Source</b> using its radio button. Leave
+          none selected if every village should just send straight to Diet
+          on its own.
+        </li>
+        <li>
+          Click <b>Generate routes</b>. Each row in the result is one
+          recurring merchant route: which village it leaves from, where it's
+          headed, how much crop, how many merchants, how often it fires (every
+          1/2/3/4/6/8h), and when it departs and arrives. Arrivals at Diet are
+          spaced so every hour gets at least one delivery of roughly even size,
+          even if any single route only fires every few hours.
+        </li>
+        <li>
+          Read the <b>warnings</b> below the table — they'll tell you if a
+          village can't keep up with what it's been asked to send, if a
+          relay was skipped for being too far or too costly in merchants, or
+          if some of the source's surplus couldn't be placed anywhere.
+        </li>
+        <li>
+          Use <b>Copy link</b> any time to save or share your exact setup —
+          opening that link again restores everything, including the
+          villages, without pasting anything back in.
+        </li>
+      </ol>
+    </div>
+  </details>
+</div>
