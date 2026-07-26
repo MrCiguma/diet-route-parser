@@ -211,7 +211,7 @@ export function computeRoutePlan(
 
     const directEligible = directCandidates
       .filter(c => c.cohortsAtCheapestK <= source.merchantsTotal * MAX_MERCHANT_SHARE && c.spareCapacity > 0)
-      .sort((a, b) => a.merchantsPerUnit - b.merchantsPerUnit);
+      .sort((a, b) => a.merchantsPerUnit - b.merchantsPerUnit || a.roundTripHours - b.roundTripHours);
 
     const { allocations: phase1, remainingSurplus: leftover, remainingMerchantTime: leftMT } = greedyAllocate({
       cropBudget: source.cropSurplusPerHour,
@@ -266,7 +266,7 @@ export function computeRoutePlan(
             return { village: stat.village, spareCapacity: spare, roundTripHours: rt, oneWayHours: owH, cheapK, merchantsPerUnit, cohortsAtCheapestK: cohortsInFlight };
           })
           .filter((c): c is GCandidate => c !== null)
-          .sort((a, b) => a.merchantsPerUnit - b.merchantsPerUnit);
+          .sort((a, b) => a.merchantsPerUnit - b.merchantsPerUnit || a.roundTripHours - b.roundTripHours);
 
         if (hubCandidates.length === 0) continue;
 
