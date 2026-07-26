@@ -136,11 +136,15 @@ function greedyAllocate(params: {
       if (maxMPF < 1) continue;
       const capByBudget = (maxMPF * params.capacityPerMerchant) / K;
       const cand = Math.min(remainingSurplus, c.spareCapacity, capByBudget);
-      if (cand <= bestAllocated) continue;
-      bestAllocated = cand;
-      bestK = K;
+      if (cand <= 0) continue;
       const mpf = ceilMerchants((cand * K) / params.capacityPerMerchant);
-      bestMerchantTimeUsed = mpf * costPer;
+      const cost = mpf * costPer;
+      // Prefer K that allocates more crop; break ties by choosing the cheaper K.
+      if (cand > bestAllocated || (cand === bestAllocated && cost < bestMerchantTimeUsed)) {
+        bestAllocated = cand;
+        bestK = K;
+        bestMerchantTimeUsed = cost;
+      }
     }
     if (bestAllocated <= 0) continue;
     allocations.set(c.village, { cropPerHour: bestAllocated, oneWayHours: c.oneWayHours, K: bestK });
@@ -248,9 +252,10 @@ export function computeRoutePlan(
 
         const hubCapacity = merchantCapacity(tribe, village.tradeOfficeLevel, allianceBonusPercent);
 
-        // Build this village's candidates for hub→relay routing
+        // Build this village's candidates for hub→relay routing (exclude itself)
         const hubCandidates: GCandidate[] = relayStats
           .map(stat => {
+            if (stat.village === village) return null; // hub can't route to itself
             const spare = spareAfterPhase1.get(stat.village) ?? 0;
             if (spare <= 0) return null;
             const dist = distanceFields(village, stat.village);
