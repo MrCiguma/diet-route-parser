@@ -11,6 +11,7 @@ import {
 } from '../shared/route-algorithm';
 
 type MerchantBonus = 0 | 30 | 60 | 90 | 120 | 150;
+type VillageRole = 'relay' | 'source';
 
 interface ParsedVillage {
   name: string;
@@ -19,6 +20,7 @@ interface ParsedVillage {
   merchantsTotal: number;
   tradeOfficeLevel: number;
   cropSurplusPerHour: number;
+  role: VillageRole;
 }
 
 @Component({
@@ -45,19 +47,17 @@ export class RouteCreatorComponent implements OnInit {
   tribe: Tribe | '' = '';
   merchantBonus: MerchantBonus | null = null;
   maxSpreadHours = 1;
+  arrivalOffsetMinutes = Math.floor(Math.random() * 60);
 
   villageInfoText = '';
   parsedVillages: ParsedVillage[] = [];
   defaultTradeOfficeLevel = 0;
-  sourceVillageIndex: number | null = null;
-  arrivalOffsetMinutes = Math.floor(Math.random() * 60);
   routePlan: RoutePlan | null = null;
 
   shareUrl = '';
   linkCopied = false;
 
-  // Source village can't be selected until villages are parsed — coordinates
-  // from the URL are held here and applied once parseVillageInfo() runs.
+  // Backward-compat: source coords from URL params before villages are loaded.
   private pendingSourceCoords: { x: number; y: number } | null = null;
 
   constructor(private route: ActivatedRoute, private router: Router) {}
@@ -68,14 +68,10 @@ export class RouteCreatorComponent implements OnInit {
     this.dietY = numberOrNull(params.get('dietY'));
 
     const tribeParam = params.get('tribe');
-    this.tribe = this.tribes.some((t) => t.value === tribeParam)
-      ? (tribeParam as Tribe)
-      : '';
+    this.tribe = this.tribes.some((t) => t.value === tribeParam) ? (tribeParam as Tribe) : '';
 
     const merchantBonusParam = numberOrNull(params.get('merchantBonus'));
-    this.merchantBonus = this.merchantBonuses.includes(
-      merchantBonusParam as MerchantBonus
-    )
+    this.merchantBonus = this.merchantBonuses.includes(merchantBonusParam as MerchantBonus)
       ? (merchantBonusParam as MerchantBonus)
       : null;
 
@@ -92,6 +88,7 @@ export class RouteCreatorComponent implements OnInit {
       this.arrivalOffsetMinutes = offsetParam;
     }
 
+    // Backward compat: sourceX/sourceY before roles were encoded in village data
     const sourceX = numberOrNull(params.get('sourceX'));
     const sourceY = numberOrNull(params.get('sourceY'));
     if (sourceX !== null && sourceY !== null) {
@@ -101,20 +98,53 @@ export class RouteCreatorComponent implements OnInit {
     const villagesParam = params.get('villages');
     if (villagesParam) {
       this.parsedVillages = decodeVillages(villagesParam);
-      this.sourceVillageIndex = this.pendingSourceCoords
-        ? this.findVillageIndexByCoords(this.pendingSourceCoords)
-        : null;
+      // Apply backward-compat source coords if no village has role='source' yet
+      if (this.pendingSourceCoords && !this.parsedVillages.some(v => v.role === 'source')) {
+        const idx = this.parsedVillages.findIndex(
+          v => v.x === this.pendingSourceCoords!.x && v.y === this.pendingSourceCoords!.y
+        );
+        if (idx >= 0) this.parsedVillages[idx].role = 'source';
+      }
     }
 
     this.updateShareUrl();
   }
 
-  onParamsChange(): void {
-    const source =
-      this.sourceVillageIndex !== null
-        ? this.parsedVillages[this.sourceVillageIndex]
-        : null;
+  get sourceVillageIndex(): number | null {
+    const idx = this.parsedVillages.findIndex(v => v.role === 'source');
+    return idx >= 0 ? idx : null;
+  }
 
+  adjustLevel(v: ParsedVillage, delta: number): void {
+    v.tradeOfficeLevel = Math.max(0, Math.min(20, v.tradeOfficeLevel + delta));
+    this.onParamsChange();
+  }
+
+  adjustSurplus(v: ParsedVillage, delta: number): void {
+    v.cropSurplusPerHour = Math.max(0, v.cropSurplusPerHour + delta);
+    this.onParamsChange();
+  }
+
+  adjustOffset(delta: number): void {
+    this.arrivalOffsetMinutes = Math.max(0, Math.min(59, this.arrivalOffsetMinutes + delta));
+    this.onParamsChange();
+  }
+
+  adjustDefaultTO(delta: number): void {
+    this.defaultTradeOfficeLevel = Math.max(0, Math.min(20, this.defaultTradeOfficeLevel + delta));
+    this.onDefaultTradeOfficeLevelChange();
+  }
+
+  onVillageRoleChange(index: number): void {
+    if (this.parsedVillages[index].role === 'source') {
+      this.parsedVillages.forEach((v, i) => {
+        if (i !== index && v.role === 'source') v.role = 'relay';
+      });
+    }
+    this.onParamsChange();
+  }
+
+  onParamsChange(): void {
     this.router.navigate([], {
       relativeTo: this.route,
       queryParams: {
@@ -125,21 +155,15 @@ export class RouteCreatorComponent implements OnInit {
         defaultTradeOfficeLevel: this.defaultTradeOfficeLevel || null,
         maxSpreadHours: this.maxSpreadHours !== 1 ? this.maxSpreadHours : null,
         arrivalOffset: this.arrivalOffsetMinutes,
-        sourceX: source?.x ?? null,
-        sourceY: source?.y ?? null,
-        villages: this.parsedVillages.length
-          ? encodeVillages(this.parsedVillages)
-          : null,
+        villages: this.parsedVillages.length ? encodeVillages(this.parsedVillages) : null,
+        // Remove legacy params
+        sourceX: null,
+        sourceY: null,
       },
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });
     this.updateShareUrl();
-  }
-
-  onSourceVillageChange(index: number): void {
-    this.sourceVillageIndex = index;
-    this.onParamsChange();
   }
 
   async copyShareLink(): Promise<void> {
@@ -151,30 +175,17 @@ export class RouteCreatorComponent implements OnInit {
 
   generateRoutes(): void {
     if (!this.tribe || this.dietX === null || this.dietY === null) {
-      this.routePlan = {
-        legs: [],
-        warnings: ['Set diet village coordinates and player tribe first.'],
-      };
+      this.routePlan = { legs: [], warnings: ['Set diet village coordinates and player tribe first.'] };
       return;
     }
 
-    // Villages missing coordinates are dropped, which can shift indices —
-    // so the source is re-located by identity within the filtered array
-    // rather than reusing its index from the unfiltered parsedVillages.
-    const sourceVillage =
-      this.sourceVillageIndex !== null
-        ? this.parsedVillages[this.sourceVillageIndex]
-        : null;
-
     const validVillages = this.parsedVillages.filter(
-      (v): v is ParsedVillage & { x: number; y: number } =>
-        v.x !== null && v.y !== null
+      (v): v is ParsedVillage & { x: number; y: number } => v.x !== null && v.y !== null
     );
-    const sourceIndex = sourceVillage
-      ? validVillages.findIndex((v) => v === sourceVillage)
-      : -1;
 
-    const villages = validVillages.map((v) => ({
+    const sourceIndex = validVillages.findIndex(v => v.role === 'source');
+
+    const villages = validVillages.map(v => ({
       name: v.name,
       x: v.x,
       y: v.y,
@@ -203,8 +214,6 @@ export class RouteCreatorComponent implements OnInit {
 
   get sortedLegs() {
     if (!this.routePlan) return [];
-    // Source→relay legs (anything not headed to Diet) sort first, then
-    // everything sorts by which village it's from.
     return [...this.routePlan.legs].sort((a, b) => {
       const aIsFromSource = a.toVillage !== 'Diet';
       const bIsFromSource = b.toVillage !== 'Diet';
@@ -221,32 +230,19 @@ export class RouteCreatorComponent implements OnInit {
 
   parseVillageInfo(): void {
     const sanitized = sanitizeText(this.villageInfoText);
-    const lines = sanitized
-      .split('\n')
-      .map((l) => l.trim())
-      .filter(Boolean);
+    const lines = sanitized.split('\n').map((l) => l.trim()).filter(Boolean);
 
     const villages: { name: string; merchantsTotal: number }[] = [];
     for (const line of lines) {
-      const cells = line
-        .split(/\t+/)
-        .map((c) => c.trim())
-        .filter(Boolean);
+      const cells = line.split(/\t+/).map((c) => c.trim()).filter(Boolean);
       if (cells.length < 6) continue;
-
       const name = cells[0];
       if (name === 'Sum') continue;
-
       const merchantsMatch = cells[cells.length - 1].match(/^(\d+)\/(\d+)$/);
       if (!merchantsMatch) continue;
-
       villages.push({ name, merchantsTotal: Number(merchantsMatch[2]) });
     }
 
-    // Coordinates live in a separate section ("Currently building") further
-    // down the page, in the same village order as the resource table above —
-    // matched positionally rather than by name, since duplicate village
-    // names (e.g. "New village") make name-based matching unreliable.
     const coordMatches = [...sanitized.matchAll(/\((-?\d+)\|(-?\d+)\)/g)];
 
     this.parsedVillages = villages.map((v, i) => ({
@@ -256,37 +252,31 @@ export class RouteCreatorComponent implements OnInit {
       merchantsTotal: v.merchantsTotal,
       tradeOfficeLevel: this.defaultTradeOfficeLevel,
       cropSurplusPerHour: 0,
+      role: 'relay' as VillageRole,
     }));
     this.routePlan = null;
 
-    this.sourceVillageIndex = this.pendingSourceCoords
-      ? this.findVillageIndexByCoords(this.pendingSourceCoords)
-      : null;
+    // Apply pending source coords (backward compat)
+    if (this.pendingSourceCoords) {
+      const idx = this.parsedVillages.findIndex(
+        v => v.x === this.pendingSourceCoords!.x && v.y === this.pendingSourceCoords!.y
+      );
+      if (idx >= 0) this.parsedVillages[idx].role = 'source';
+    }
 
     this.onParamsChange();
   }
 
   onDefaultTradeOfficeLevelChange(): void {
     for (const v of this.parsedVillages) {
-      if (v.tradeOfficeLevel === 0) {
-        v.tradeOfficeLevel = this.defaultTradeOfficeLevel;
-      }
+      if (v.tradeOfficeLevel === 0) v.tradeOfficeLevel = this.defaultTradeOfficeLevel;
     }
     this.onParamsChange();
   }
 
-  private findVillageIndexByCoords(coords: { x: number; y: number }): number | null {
-    const index = this.parsedVillages.findIndex(
-      (v) => v.x === coords.x && v.y === coords.y
-    );
-    return index >= 0 ? index : null;
-  }
-
   private updateShareUrl(): void {
     const search = new URLSearchParams(this.buildQueryParams()).toString();
-    this.shareUrl = `${window.location.origin}${window.location.pathname}${
-      search ? '?' + search : ''
-    }`;
+    this.shareUrl = `${window.location.origin}${window.location.pathname}${search ? '?' + search : ''}`;
   }
 
   private buildQueryParams(): Record<string, string> {
@@ -294,66 +284,49 @@ export class RouteCreatorComponent implements OnInit {
     if (this.dietX !== null) params['dietX'] = String(this.dietX);
     if (this.dietY !== null) params['dietY'] = String(this.dietY);
     if (this.tribe) params['tribe'] = this.tribe;
-    if (this.merchantBonus !== null)
-      params['merchantBonus'] = String(this.merchantBonus);
-    if (this.defaultTradeOfficeLevel)
-      params['defaultTradeOfficeLevel'] = String(this.defaultTradeOfficeLevel);
-    if (this.maxSpreadHours !== 1)
-      params['maxSpreadHours'] = String(this.maxSpreadHours);
+    if (this.merchantBonus !== null) params['merchantBonus'] = String(this.merchantBonus);
+    if (this.defaultTradeOfficeLevel) params['defaultTradeOfficeLevel'] = String(this.defaultTradeOfficeLevel);
+    if (this.maxSpreadHours !== 1) params['maxSpreadHours'] = String(this.maxSpreadHours);
     params['arrivalOffset'] = String(this.arrivalOffsetMinutes);
-
-    const source =
-      this.sourceVillageIndex !== null
-        ? this.parsedVillages[this.sourceVillageIndex]
-        : null;
-    if (source && source.x !== null && source.y !== null) {
-      params['sourceX'] = String(source.x);
-      params['sourceY'] = String(source.y);
-    }
-    if (this.parsedVillages.length)
-      params['villages'] = encodeVillages(this.parsedVillages);
+    if (this.parsedVillages.length) params['villages'] = encodeVillages(this.parsedVillages);
     return params;
   }
 }
 
-// name,x,y,merchantsTotal,tradeOfficeLevel,cropSurplusPerHour per village,
-// villages joined with ";". Name is percent-encoded since it's the only
-// free-text field and could otherwise collide with the "," / ";" delimiters.
+// name,x,y,merchantsTotal,tradeOfficeLevel,cropSurplusPerHour,role per village
+// role: r=relay (default), s=source  (legacy 'h' hub code decoded as relay)
 function encodeVillages(villages: ParsedVillage[]): string {
   return villages
-    .map((v) =>
-      [
-        encodeURIComponent(v.name),
-        v.x ?? '',
-        v.y ?? '',
-        v.merchantsTotal,
-        v.tradeOfficeLevel,
-        v.cropSurplusPerHour,
-      ].join(',')
-    )
+    .map(v => [
+      encodeURIComponent(v.name),
+      v.x ?? '',
+      v.y ?? '',
+      v.merchantsTotal,
+      v.tradeOfficeLevel,
+      v.cropSurplusPerHour,
+      v.role === 'source' ? 's' : 'r',
+    ].join(','))
     .join(';');
 }
 
 function decodeVillages(raw: string): ParsedVillage[] {
-  return raw
-    .split(';')
-    .filter(Boolean)
-    .map((entry) => {
-      const [name, x, y, merchantsTotal, tradeOfficeLevel, cropSurplusPerHour] =
-        entry.split(',');
-      return {
-        name: decodeURIComponent(name ?? ''),
-        x: numberOrNull(x),
-        y: numberOrNull(y),
-        merchantsTotal: Number(merchantsTotal) || 0,
-        tradeOfficeLevel: Number(tradeOfficeLevel) || 0,
-        cropSurplusPerHour: Number(cropSurplusPerHour) || 0,
-      };
-    });
+  return raw.split(';').filter(Boolean).map(entry => {
+    const [name, x, y, merchantsTotal, tradeOfficeLevel, cropSurplusPerHour, roleCode] = entry.split(',');
+    const role: VillageRole = roleCode === 's' ? 'source' : 'relay';
+    return {
+      name: decodeURIComponent(name ?? ''),
+      x: numberOrNull(x),
+      y: numberOrNull(y),
+      merchantsTotal: Number(merchantsTotal) || 0,
+      tradeOfficeLevel: Number(tradeOfficeLevel) || 0,
+      cropSurplusPerHour: Number(cropSurplusPerHour) || 0,
+      role,
+    };
+  });
 }
 
-function numberOrNull(value: string | null): number | null {
-  if (value === null || value === '') return null;
+function numberOrNull(value: string | null | undefined): number | null {
+  if (value == null || value === '') return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }

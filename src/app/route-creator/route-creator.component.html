@@ -67,14 +67,20 @@
       </div>
       <div class="field">
         <label for="arrivalOffset">Arrival offset (minutes)</label>
-        <input
-          id="arrivalOffset"
-          type="number"
-          min="0"
-          max="59"
-          [(ngModel)]="arrivalOffsetMinutes"
-          (change)="onParamsChange()"
-        />
+        <div class="num-input-group">
+          <input
+            id="arrivalOffset"
+            type="number"
+            min="0"
+            max="59"
+            [(ngModel)]="arrivalOffsetMinutes"
+            (change)="onParamsChange()"
+          />
+          <div class="spin-btns">
+            <button type="button" tabindex="-1" (click)="adjustOffset(1)">▲</button>
+            <button type="button" tabindex="-1" (click)="adjustOffset(-1)">▼</button>
+          </div>
+        </div>
         <p class="hint">
           Shifts all arrival times by this many minutes (0–59). Change this so
           your schedule doesn't overlap with other players using the same tool.
@@ -113,14 +119,20 @@
       <div class="field">
         <div class="default-level-row">
           <label for="defaultTradeOfficeLevel">Default level</label>
-          <input
-            id="defaultTradeOfficeLevel"
-            type="number"
-            min="0"
-            max="20"
-            [(ngModel)]="defaultTradeOfficeLevel"
-            (change)="onDefaultTradeOfficeLevelChange()"
-          />
+          <div class="num-input-group">
+            <input
+              id="defaultTradeOfficeLevel"
+              type="number"
+              min="0"
+              max="20"
+              [(ngModel)]="defaultTradeOfficeLevel"
+              (change)="onDefaultTradeOfficeLevelChange()"
+            />
+            <div class="spin-btns">
+              <button type="button" tabindex="-1" (click)="adjustDefaultTO(1)">▲</button>
+              <button type="button" tabindex="-1" (click)="adjustDefaultTO(-1)">▼</button>
+            </div>
+          </div>
           <span class="hint">applies to villages still at 0</span>
         </div>
 
@@ -132,7 +144,7 @@
               <th class="num">Merchants</th>
               <th class="num">Trade office level</th>
               <th class="num">Crop surplus/hour</th>
-              <th class="num">Source</th>
+              <th class="num">Role</th>
             </tr>
           </thead>
           <tbody>
@@ -141,29 +153,39 @@
               <td class="num">{{ v.x !== null && v.y !== null ? '(' + v.x + '|' + v.y + ')' : '—' }}</td>
               <td class="num">{{ v.merchantsTotal }}</td>
               <td class="num">
-                <input
-                  type="number"
-                  min="0"
-                  max="20"
-                  [(ngModel)]="v.tradeOfficeLevel"
-                  (change)="onParamsChange()"
-                />
+                <div class="num-input-group">
+                  <input
+                    type="number"
+                    min="0"
+                    max="20"
+                    [(ngModel)]="v.tradeOfficeLevel"
+                    (change)="onParamsChange()"
+                  />
+                  <div class="spin-btns">
+                    <button type="button" tabindex="-1" (click)="adjustLevel(v, 1)">▲</button>
+                    <button type="button" tabindex="-1" (click)="adjustLevel(v, -1)">▼</button>
+                  </div>
+                </div>
               </td>
               <td class="num">
-                <input
-                  type="number"
-                  min="0"
-                  [(ngModel)]="v.cropSurplusPerHour"
-                  (change)="onParamsChange()"
-                />
+                <div class="num-input-group">
+                  <input
+                    type="number"
+                    min="0"
+                    [(ngModel)]="v.cropSurplusPerHour"
+                    (change)="onParamsChange()"
+                  />
+                  <div class="spin-btns">
+                    <button type="button" tabindex="-1" (click)="adjustSurplus(v, 5000)">▲</button>
+                    <button type="button" tabindex="-1" (click)="adjustSurplus(v, -5000)">▼</button>
+                  </div>
+                </div>
               </td>
               <td class="num">
-                <input
-                  type="radio"
-                  name="sourceVillage"
-                  [checked]="sourceVillageIndex === i"
-                  (change)="onSourceVillageChange(i)"
-                />
+                <select [(ngModel)]="v.role" (change)="onVillageRoleChange(i)">
+                  <option value="relay">—</option>
+                  <option value="source">Source</option>
+                </select>
               </td>
             </tr>
           </tbody>

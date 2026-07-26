@@ -19,8 +19,8 @@ export interface RouteLeg {
   cropPerHour: number;
   merchantsPerFiring: number;
   intervalHours: number;
-  departureMinute: number; // minutes from cycle start, within [0, intervalHours*60)
-  arrivalMinute: number; // minutes from cycle start; can exceed intervalHours*60
+  departureMinute: number;
+  arrivalMinute: number;
 }
 
 export interface RoutePlan {
@@ -33,140 +33,121 @@ interface Coords {
   y: number;
 }
 
-// The route-firing intervals Travian actually offers.
 export const ALLOWED_INTERVALS_HOURS = [1, 2, 3, 4, 6, 8];
 
 const BUFFER_MINUTES = 5;
 const CYCLE_HOURS = 24;
+const MAX_MERCHANT_SHARE = 0.25;
 
 function distanceFields(a: Coords, b: Coords): number {
   return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
 }
 
+// Travian computes travel time per minute, ceiling each one-way leg.
+// 3m30s one-way → 4 min → 8 min round trip (not 7).
+function oneWayMinutes(distance: number, speed: number): number {
+  return Math.ceil((distance / speed) * 60);
+}
+
 function roundTripHours(distance: number, speed: number): number {
-  return (2 * distance) / speed;
+  return (oneWayMinutes(distance, speed) * 2) / 60;
 }
 
 function modMinutes(minutes: number, cycleMinutes: number): number {
   return ((Math.round(minutes) % cycleMinutes) + cycleMinutes) % cycleMinutes;
 }
 
-// Merchant counts are derived from crop amounts that have already passed
-// through several multiply/divide steps (capacityPerMerchant itself carries
-// float noise from the alliance-bonus multiplier), so a value that should
-// land exactly on a whole number can come out as e.g. 4.000000000000001.
-// Ceiling that without a tolerance rounds up to 5 and quietly wastes a
-// merchant, so every merchant-count ceil() in this file goes through here.
+// Float noise guard: capacity * alliance-bonus multiplier can produce
+// e.g. 4.000000000000001, which Math.ceil rounds to 5.
 function ceilMerchants(value: number): number {
   return Math.ceil(value - 1e-6);
 }
 
-// For a given round trip, a village's actual merchant count, and a cap on
-// how many hours a route may be spread over, finds the firing interval
-// (from Travian's allowed set) that maximizes ACTUAL achievable throughput —
-// not merchants-per-unit efficiency. Those two are not the same thing:
-// merchantsPerFiring = floor(merchantsTotal / cohortsInFlight) quantizes in
-// steps, so a larger K can let a fixed merchant count divide evenly (using
-// all of it) where a smaller K would leave several merchants idle to
-// rounding, even though the smaller K "looks" more efficient per merchant.
-// Village throughput, not merchant efficiency, is the actual goal — using
-// more merchants is fine as long as the route can physically fire (i.e.
-// never needs more merchants in flight than the village owns).
-function bestInterval(
-  roundTrip: number,
-  merchantsTotal: number,
-  maxSpreadHours: number
-) {
-  let best: {
-    K: number;
-    cohortsInFlight: number;
-    merchantsPerFiring: number;
-    throughputUnits: number;
-  } | null = null;
-
+function bestInterval(roundTrip: number, merchantsTotal: number, maxSpreadHours: number) {
+  let best: { K: number; cohortsInFlight: number; merchantsPerFiring: number; throughputUnits: number } | null = null;
   for (const K of ALLOWED_INTERVALS_HOURS) {
     if (K > maxSpreadHours) continue;
     const cohortsInFlight = Math.ceil(roundTrip / K);
     const merchantsPerFiring = Math.floor(merchantsTotal / cohortsInFlight);
-    const throughputUnits = merchantsPerFiring / K; // crop/hour, per unit of capacityPerMerchant
-    if (
-      !best ||
-      throughputUnits > best.throughputUnits ||
-      (throughputUnits === best.throughputUnits && K < best.K)
-    ) {
+    const throughputUnits = merchantsPerFiring / K;
+    if (!best || throughputUnits > best.throughputUnits || (throughputUnits === best.throughputUnits && K < best.K)) {
       best = { K, cohortsInFlight, merchantsPerFiring, throughputUnits };
     }
   }
-
-  return (
-    best ?? {
-      K: 1,
-      cohortsInFlight: Math.ceil(roundTrip),
-      merchantsPerFiring: 0,
-      throughputUnits: 0,
-    }
-  );
+  return best ?? { K: 1, cohortsInFlight: Math.ceil(roundTrip), merchantsPerFiring: 0, throughputUnits: 0 };
 }
 
-// For the source→relay hop, source isn't trying to maximize that single
-// edge's capacity — its merchant pool is shared across every relay it might
-// feed, so what matters is minimizing how many of ITS merchants a unit of
-// throughput costs (ceil(roundTrip/K) * K). This is a different objective
-// from bestInterval on purpose: a relay's own onward-to-Diet leg maximizes
-// throughput given ITS fixed merchants, but source is rationing a shared
-// budget across multiple candidates, so cost-per-unit is what should drive
-// the choice here, independent of whatever K the relay uses onward.
 function cheapestInterval(roundTrip: number, maxSpreadHours: number) {
-  let best: { K: number; cohortsInFlight: number; merchantsPerUnit: number } | null =
-    null;
+  let best: { K: number; cohortsInFlight: number; merchantsPerUnit: number } | null = null;
   for (const K of ALLOWED_INTERVALS_HOURS) {
     if (K > maxSpreadHours) continue;
     const cohortsInFlight = Math.ceil(roundTrip / K);
     const merchantsPerUnit = cohortsInFlight * K;
-    if (!best || merchantsPerUnit < best.merchantsPerUnit) {
-      best = { K, cohortsInFlight, merchantsPerUnit };
-    }
+    if (!best || merchantsPerUnit < best.merchantsPerUnit) best = { K, cohortsInFlight, merchantsPerUnit };
   }
-  return (
-    best ?? {
-      K: 1,
-      cohortsInFlight: Math.ceil(roundTrip),
-      merchantsPerUnit: Math.ceil(roundTrip),
-    }
-  );
+  return best ?? { K: 1, cohortsInFlight: Math.ceil(roundTrip), merchantsPerUnit: Math.ceil(roundTrip) };
 }
 
-// Max crop/hour a village can sustain sending to a target, and the firing
-// interval that achieves it.
-function maxThroughput(
-  village: RouteVillageInput,
-  target: Coords,
-  tribe: Tribe,
-  allianceBonusPercent: number,
-  maxSpreadHours: number
-) {
+function maxThroughput(village: RouteVillageInput, target: Coords, tribe: Tribe, allianceBonusPercent: number, maxSpreadHours: number) {
   const distance = distanceFields(village, target);
   const speed = MERCHANT_SPEED_FIELDS_PER_HOUR[tribe];
-  const oneWayHours = distance / speed;
-  const capacityPerMerchant = merchantCapacity(
-    tribe,
-    village.tradeOfficeLevel,
-    allianceBonusPercent
-  );
-  const { K, cohortsInFlight, merchantsPerFiring } = bestInterval(
-    roundTripHours(distance, speed),
-    village.merchantsTotal,
-    maxSpreadHours
-  );
+  const oneWayHours = oneWayMinutes(distance, speed) / 60;
+  const capacityPerMerchant = merchantCapacity(tribe, village.tradeOfficeLevel, allianceBonusPercent);
+  const { K, cohortsInFlight, merchantsPerFiring } = bestInterval(roundTripHours(distance, speed), village.merchantsTotal, maxSpreadHours);
   const cropPerHour = (merchantsPerFiring * capacityPerMerchant) / K;
-  return {
-    oneWayHours,
-    capacityPerMerchant,
-    K,
-    cohortsInFlight,
-    merchantsPerFiring,
-    cropPerHour,
-  };
+  return { oneWayHours, capacityPerMerchant, K, cohortsInFlight, merchantsPerFiring, cropPerHour };
+}
+
+interface GCandidate {
+  village: RouteVillageInput;
+  spareCapacity: number;
+  roundTripHours: number;
+  oneWayHours: number;
+  cheapK: number;
+  merchantsPerUnit: number;
+  cohortsAtCheapestK: number;
+}
+
+// Greedy merchant-time water-fill. Returns allocations plus remaining budget
+// so callers can chain a second pass (e.g. a hub pass after a direct pass).
+function greedyAllocate(params: {
+  cropBudget: number;       // use Infinity to find merchant-capacity ceiling
+  merchantBudget: number;
+  capacityPerMerchant: number;
+  maxSpreadHours: number;
+  candidates: GCandidate[]; // pre-filtered and pre-sorted by merchantsPerUnit
+}): {
+  allocations: Map<RouteVillageInput, { cropPerHour: number; oneWayHours: number; K: number }>;
+  remainingSurplus: number;
+  remainingMerchantTime: number;
+} {
+  const allocations = new Map<RouteVillageInput, { cropPerHour: number; oneWayHours: number; K: number }>();
+  let remainingSurplus = params.cropBudget;
+  let remainingMerchantTime = params.merchantBudget;
+
+  for (const c of params.candidates) {
+    if (remainingSurplus <= 0 || remainingMerchantTime <= 0) break;
+    let bestAllocated = 0, bestMerchantTimeUsed = 0, bestK = c.cheapK;
+    for (const K of ALLOWED_INTERVALS_HOURS) {
+      if (K > params.maxSpreadHours) continue;
+      const cohorts = Math.ceil(c.roundTripHours / K);
+      const costPer = cohorts > 1 ? cohorts : c.roundTripHours / K;
+      const maxMPF = Math.floor(remainingMerchantTime / costPer);
+      if (maxMPF < 1) continue;
+      const capByBudget = (maxMPF * params.capacityPerMerchant) / K;
+      const cand = Math.min(remainingSurplus, c.spareCapacity, capByBudget);
+      if (cand <= bestAllocated) continue;
+      bestAllocated = cand;
+      bestK = K;
+      const mpf = ceilMerchants((cand * K) / params.capacityPerMerchant);
+      bestMerchantTimeUsed = mpf * costPer;
+    }
+    if (bestAllocated <= 0) continue;
+    allocations.set(c.village, { cropPerHour: bestAllocated, oneWayHours: c.oneWayHours, K: bestK });
+    remainingSurplus -= bestAllocated;
+    remainingMerchantTime -= bestMerchantTimeUsed;
+  }
+  return { allocations, remainingSurplus, remainingMerchantTime };
 }
 
 export function computeRoutePlan(
@@ -180,318 +161,310 @@ export function computeRoutePlan(
 ): RoutePlan {
   const warnings: string[] = [];
   const legs: RouteLeg[] = [];
+  const speed = MERCHANT_SPEED_FIELDS_PER_HOUR[tribe];
 
-  const source =
-    sourceVillageIndex !== null ? villages[sourceVillageIndex] ?? null : null;
-  const others = villages.filter((v) => v !== source);
+  const source = sourceVillageIndex !== null ? villages[sourceVillageIndex] ?? null : null;
+  const nonSource = villages.filter(v => v !== source);
 
-  const otherStats = others.map((village) => ({
+  const relayStats = nonSource.map(village => ({
     village,
-    ...maxThroughput(
-      village,
-      dietCoords,
-      tribe,
-      allianceBonusPercent,
-      maxSpreadHours
-    ),
+    ...maxThroughput(village, dietCoords, tribe, allianceBonusPercent, maxSpreadHours),
   }));
 
-  // Keyed by village object identity, not name — village names aren't
-  // guaranteed unique (e.g. multiple un-renamed "New village" entries).
-  const fromSource = new Map<
-    RouteVillageInput,
-    { cropPerHour: number; oneWayHours: number; sourceK: number }
-  >();
+  // fromSource: village (relay or auto-detected hub) → what source sends to it
+  const fromSource = new Map<RouteVillageInput, { cropPerHour: number; oneWayHours: number; K: number }>();
+
+  // fromHub: relay → what a hub sends to it
+  const fromHub = new Map<RouteVillageInput, { hub: RouteVillageInput; cropPerHour: number; oneWayHours: number; K: number }>();
+
+  // hubMaxAllocations: for each auto-detected hub, its scaled relay plan
+  const hubMaxAllocations = new Map<RouteVillageInput, Map<RouteVillageInput, { cropPerHour: number; oneWayHours: number; K: number }>>();
 
   if (source && source.cropSurplusPerHour > 0) {
-    const sourceCapacityPerMerchant = merchantCapacity(
-      tribe,
-      source.tradeOfficeLevel,
-      allianceBonusPercent
-    );
-    const speed = MERCHANT_SPEED_FIELDS_PER_HOUR[tribe];
+    const sourceCapacity = merchantCapacity(tribe, source.tradeOfficeLevel, allianceBonusPercent);
 
-    // The source→relay hop picks its own cheapest interval independent of
-    // the relay's onward-to-Diet interval — see cheapestInterval() for why.
-    // roundTripFromSource is kept around so the actual allocation step can
-    // re-check every interval against whatever budget is left by then,
-    // rather than committing to a single interval up front.
-    const candidates = otherStats.map((stat) => {
-      const distanceFromSource = distanceFields(source, stat.village);
-      const oneWayFromSource = distanceFromSource / speed;
-      const roundTripFromSource = roundTripHours(distanceFromSource, speed);
-      const { K: sourceK, cohortsInFlight, merchantsPerUnit } = cheapestInterval(
-        roundTripFromSource,
-        maxSpreadHours
-      );
-      const spareCapacity = Math.max(
-        0,
-        stat.cropPerHour - stat.village.cropSurplusPerHour
-      );
-      return {
-        stat,
-        oneWayFromSource,
-        roundTripFromSource,
-        sourceK,
-        cohortsInFlight,
-        merchantsPerUnit,
-        spareCapacity,
-      };
+    const buildCandidate = (village: RouteVillageInput, spareCapacity: number): GCandidate => {
+      const dist = distanceFields(source, village);
+      const rt = roundTripHours(dist, speed);
+      const owH = oneWayMinutes(dist, speed) / 60;
+      const { K: cheapK, cohortsInFlight, merchantsPerUnit } = cheapestInterval(rt, maxSpreadHours);
+      return { village, spareCapacity, roundTripHours: rt, oneWayHours: owH, cheapK, merchantsPerUnit, cohortsAtCheapestK: cohortsInFlight };
+    };
+
+    // ── Phase 1: source → direct relay allocation ──────────────────────────
+    const directCandidates = relayStats.map(stat => {
+      const spare = Math.max(0, stat.cropPerHour - stat.village.cropSurplusPerHour);
+      return buildCandidate(stat.village, spare);
     });
 
-    // Two hard rules exclude a relay outright: it's physically impossible
-    // (round trip alone needs more merchants than the village has at all),
-    // or even sending just 1 merchant per firing would keep more than 25%
-    // of source's fleet walking at all times (cohortsInFlight merchants
-    // permanently occupied) — locking that much of the fleet on one far
-    // relay isn't worth it. Short of that, more merchants is fine; every
-    // remaining candidate gets a shot at leftover budget.
-    const MAX_MERCHANT_SHARE = 0.25;
-    for (const c of candidates) {
-      if (c.cohortsInFlight > source.merchantsTotal) {
-        warnings.push(
-          `${c.stat.village.name} is too far from ${source.name} for a relay route even with up to ${maxSpreadHours}h spread (round trip alone needs more merchants than ${source.name} has) — ignored.`
-        );
-      } else if (c.cohortsInFlight > source.merchantsTotal * MAX_MERCHANT_SHARE) {
-        warnings.push(
-          `${c.stat.village.name} would keep at least ${c.cohortsInFlight} of ${source.name}'s ${source.merchantsTotal} merchants walking at all times — more than 25% of the fleet for one relay — skipped.`
-        );
+    for (const c of directCandidates) {
+      if (c.cohortsAtCheapestK > source.merchantsTotal) {
+        warnings.push(`${c.village.name} is too far from ${source.name} for a relay route even with up to ${maxSpreadHours}h spread — ignored.`);
+      } else if (c.cohortsAtCheapestK > source.merchantsTotal * MAX_MERCHANT_SHARE) {
+        warnings.push(`${c.village.name} would keep at least ${c.cohortsAtCheapestK} of ${source.name}'s ${source.merchantsTotal} merchants walking at all times — more than 25% of the fleet — skipped.`);
       }
     }
 
-    // Greedy water-fill: cheapest relays (fewest source merchants per unit
-    // throughput) get allocated first, up to their own spare capacity and
-    // whatever's left of source's merchant pool.
-    const eligible = candidates
-      .filter(
-        (c) =>
-          c.cohortsInFlight <= source.merchantsTotal * MAX_MERCHANT_SHARE &&
-          c.spareCapacity > 0
-      )
+    const directEligible = directCandidates
+      .filter(c => c.cohortsAtCheapestK <= source.merchantsTotal * MAX_MERCHANT_SHARE && c.spareCapacity > 0)
       .sort((a, b) => a.merchantsPerUnit - b.merchantsPerUnit);
 
-    let remainingSurplus = source.cropSurplusPerHour;
-    let remainingMerchants = source.merchantsTotal;
+    const { allocations: phase1, remainingSurplus: leftover, remainingMerchantTime: leftMT } = greedyAllocate({
+      cropBudget: source.cropSurplusPerHour,
+      merchantBudget: source.merchantsTotal,
+      capacityPerMerchant: sourceCapacity,
+      maxSpreadHours,
+      candidates: directEligible,
+    });
 
-    for (const c of eligible) {
-      if (remainingSurplus <= 0 || remainingMerchants <= 0) break;
+    for (const [v, a] of phase1) fromSource.set(v, a);
 
-      // A cheaper-per-unit interval isn't useful if its up-front cohort
-      // cost doesn't fit what's actually left of the budget by this point
-      // in the greedy pass, while a "less efficient" interval with a
-      // smaller absolute cohort count might still fit and deliver
-      // something — so every interval is re-checked against what remains,
-      // not just the one that was cheapest against the full merchant pool.
-      let bestAllocated = 0;
-      let bestMerchantsUsed = 0;
-      let bestK = c.sourceK;
-
-      for (const K of ALLOWED_INTERVALS_HOURS) {
-        if (K > maxSpreadHours) continue;
-        const cohorts = Math.ceil(c.roundTripFromSource / K);
-        if (cohorts > remainingMerchants) continue;
-
-        const maxMerchantsPerFiringByBudget = Math.floor(remainingMerchants / cohorts);
-        const capByBudget = (maxMerchantsPerFiringByBudget * sourceCapacityPerMerchant) / K;
-        const candidateAllocated = Math.min(remainingSurplus, c.spareCapacity, capByBudget);
-        if (candidateAllocated <= bestAllocated) continue;
-
-        bestAllocated = candidateAllocated;
-        bestK = K;
-        bestMerchantsUsed =
-          ceilMerchants((candidateAllocated * K) / sourceCapacityPerMerchant) * cohorts;
+    // ── Phase 2: auto-hub detection ────────────────────────────────────────
+    // If source still has surplus and merchant-time left, look for villages
+    // that could act as intermediate hubs — close to source (cheap to feed)
+    // and able to reach relays that source couldn't fill directly.
+    if (leftover > 0.5 && leftMT > 0) {
+      // Relay spare capacity remaining after Phase 1 direct allocations.
+      const spareAfterPhase1 = new Map<RouteVillageInput, number>();
+      for (const stat of relayStats) {
+        const original = Math.max(0, stat.cropPerHour - stat.village.cropSurplusPerHour);
+        const used = phase1.get(stat.village)?.cropPerHour ?? 0;
+        spareAfterPhase1.set(stat.village, Math.max(0, original - used));
       }
 
-      if (bestAllocated <= 0) continue;
+      interface HubOption {
+        village: RouteVillageInput;
+        maxAllocs: Map<RouteVillageInput, { cropPerHour: number; oneWayHours: number; K: number }>;
+        maxForwardCapacity: number;
+        spareForSource: number;
+        sourceCandidate: GCandidate;
+      }
 
-      fromSource.set(c.stat.village, {
-        cropPerHour: bestAllocated,
-        oneWayHours: c.oneWayFromSource,
-        sourceK: bestK,
-      });
+      const hubOptions: HubOption[] = [];
 
-      remainingSurplus -= bestAllocated;
-      remainingMerchants -= bestMerchantsUsed;
-    }
+      for (const village of nonSource) {
+        if (phase1.has(village)) continue; // already a direct relay recipient
+        if (village.merchantsTotal === 0) continue;
 
-    if (remainingSurplus > 0.5) {
-      warnings.push(
-        `${source.name} has ${Math.round(
-          remainingSurplus
-        )} crop/hour that couldn't be allocated to any relay village (relay capacity or merchant limits reached).`
-      );
+        const hubCapacity = merchantCapacity(tribe, village.tradeOfficeLevel, allianceBonusPercent);
+
+        // Build this village's candidates for hub→relay routing
+        const hubCandidates: GCandidate[] = relayStats
+          .map(stat => {
+            const spare = spareAfterPhase1.get(stat.village) ?? 0;
+            if (spare <= 0) return null;
+            const dist = distanceFields(village, stat.village);
+            const rt = roundTripHours(dist, speed);
+            const owH = oneWayMinutes(dist, speed) / 60;
+            const { K: cheapK, cohortsInFlight, merchantsPerUnit } = cheapestInterval(rt, maxSpreadHours);
+            if (cohortsInFlight > village.merchantsTotal * MAX_MERCHANT_SHARE) return null;
+            return { village: stat.village, spareCapacity: spare, roundTripHours: rt, oneWayHours: owH, cheapK, merchantsPerUnit, cohortsAtCheapestK: cohortsInFlight };
+          })
+          .filter((c): c is GCandidate => c !== null)
+          .sort((a, b) => a.merchantsPerUnit - b.merchantsPerUnit);
+
+        if (hubCandidates.length === 0) continue;
+
+        const { allocations: maxAllocs } = greedyAllocate({
+          cropBudget: Infinity,
+          merchantBudget: village.merchantsTotal,
+          capacityPerMerchant: hubCapacity,
+          maxSpreadHours,
+          candidates: hubCandidates,
+        });
+
+        const maxForwardCapacity = [...maxAllocs.values()].reduce((s, a) => s + a.cropPerHour, 0);
+        const spareForSource = Math.max(0, maxForwardCapacity - village.cropSurplusPerHour);
+        if (spareForSource <= 0.5) continue;
+
+        // Can source actually reach this hub affordably?
+        const sourceCandidate = buildCandidate(village, spareForSource);
+        if (sourceCandidate.cohortsAtCheapestK > source.merchantsTotal * MAX_MERCHANT_SHARE) continue;
+
+        hubOptions.push({ village, maxAllocs, maxForwardCapacity, spareForSource, sourceCandidate });
+      }
+
+      if (hubOptions.length > 0) {
+        const hubEligible = hubOptions
+          .map(h => h.sourceCandidate)
+          .sort((a, b) => a.merchantsPerUnit - b.merchantsPerUnit);
+
+        const { allocations: phase2 } = greedyAllocate({
+          cropBudget: leftover,
+          merchantBudget: leftMT,
+          capacityPerMerchant: sourceCapacity,
+          maxSpreadHours,
+          candidates: hubEligible,
+        });
+
+        for (const [hub, alloc] of phase2) {
+          fromSource.set(hub, alloc);
+          const opt = hubOptions.find(h => h.village === hub)!;
+          hubMaxAllocations.set(hub, opt.maxAllocs);
+
+          const totalHubCrop = hub.cropSurplusPerHour + alloc.cropPerHour;
+          const scale = Math.min(1, totalHubCrop / opt.maxForwardCapacity);
+
+          for (const [relay, maxA] of opt.maxAllocs) {
+            const scaled = maxA.cropPerHour * scale;
+            if (scaled <= 0) continue;
+            const existing = fromHub.get(relay);
+            if (!existing || scaled > existing.cropPerHour) {
+              fromHub.set(relay, { hub, cropPerHour: scaled, oneWayHours: maxA.oneWayHours, K: maxA.K });
+            }
+          }
+        }
+
+        const totalUsed = [...fromSource.values()].reduce((s, a) => s + a.cropPerHour, 0);
+        const finalLeftover = source.cropSurplusPerHour - totalUsed;
+        if (finalLeftover > 0.5) {
+          warnings.push(`${source.name} has ${Math.round(finalLeftover)} crop/hour that couldn't be allocated — relay capacity or merchant limits reached.`);
+        }
+      } else {
+        warnings.push(`${source.name} has ${Math.round(leftover)} crop/hour that couldn't be allocated — no hub village could bridge the remaining relays.`);
+      }
+    } else if (leftover > 0.5) {
+      warnings.push(`${source.name} has ${Math.round(leftover)} crop/hour that couldn't be allocated — relay capacity or merchant limits reached.`);
     }
   }
 
-  // Villages with nothing to send (still at the default 0 crop surplus)
-  // don't get a leg at all.
-  const standalone = otherStats.filter(
-    (s) => !fromSource.has(s.village) && s.village.cropSurplusPerHour > 0
-  );
-  const relayFed = otherStats.filter((s) => fromSource.has(s.village));
+  // ── Scheduling ────────────────────────────────────────────────────────────
+  const dietBound = relayStats
+    .filter(s => s.village.cropSurplusPerHour > 0 || fromSource.has(s.village) || fromHub.has(s.village))
+    .sort((a, b) => b.K - a.K);
 
-  const pushLegToDiet = (
-    stat: (typeof otherStats)[number],
-    outflow: number,
-    departureMinute: number,
-    arrivalMinute: number
-  ) => {
-    if (outflow <= 0) return;
-    const merchantsPerFiring = ceilMerchants(
-      (outflow * stat.K) / stat.capacityPerMerchant
-    );
-    if (merchantsPerFiring > stat.merchantsPerFiring) {
-      const requested = Math.round(outflow);
-      const maxAchievable = Math.round(stat.cropPerHour);
-      warnings.push(
-        `${stat.village.name} can't sustain ${requested} crop/hour to Diet — its max capacity using every-${stat.K}h routes is ${maxAchievable} crop/hour with its current merchants and trade office level.`
-      );
-    }
-    legs.push({
-      fromVillage: stat.village.name,
-      toVillage: 'Diet',
-      cropPerHour: outflow,
-      merchantsPerFiring,
-      intervalHours: stat.K,
-      departureMinute,
-      arrivalMinute,
-    });
-  };
-
-  // Diet arrivals are spread across a 24h reference cycle (a common
-  // multiple of every allowed interval) so that every hour gets at least
-  // one delivery and hourly totals stay roughly even. The hardest-to-place
-  // routes (the biggest interval, fewest possible slots) are scheduled
-  // first, each picking whichever slot is currently least loaded.
-  const dietBound = [...standalone, ...relayFed].sort((a, b) => b.K - a.K);
   const hourLoad = new Array(CYCLE_HOURS).fill(0);
   const phaseHourByVillage = new Map<RouteVillageInput, number>();
 
   for (const stat of dietBound) {
     const outflow =
       stat.village.cropSurplusPerHour +
-      (fromSource.get(stat.village)?.cropPerHour ?? 0);
+      (fromSource.get(stat.village)?.cropPerHour ?? 0) +
+      (fromHub.get(stat.village)?.cropPerHour ?? 0);
     const cropPerFiring = outflow * stat.K;
     const firingsPerCycle = CYCLE_HOURS / stat.K;
-
-    let bestPhase = 0;
-    let bestScore = Infinity;
+    let bestPhase = 0, bestScore = Infinity;
     for (let phase = 0; phase < stat.K; phase++) {
       let score = 0;
-      for (let f = 0; f < firingsPerCycle; f++) {
-        score += hourLoad[(phase + f * stat.K) % CYCLE_HOURS];
-      }
-      if (score < bestScore) {
-        bestScore = score;
-        bestPhase = phase;
-      }
+      for (let f = 0; f < firingsPerCycle; f++) score += hourLoad[(phase + f * stat.K) % CYCLE_HOURS];
+      if (score < bestScore) { bestScore = score; bestPhase = phase; }
     }
-    for (let f = 0; f < firingsPerCycle; f++) {
-      hourLoad[(bestPhase + f * stat.K) % CYCLE_HOURS] += cropPerFiring;
-    }
+    for (let f = 0; f < firingsPerCycle; f++) hourLoad[(bestPhase + f * stat.K) % CYCLE_HOURS] += cropPerFiring;
     phaseHourByVillage.set(stat.village, bestPhase);
   }
 
   if (dietBound.length > 0) {
-    const emptyHours = hourLoad
-      .map((load, hour) => (load === 0 ? hour : null))
-      .filter((hour): hour is number => hour !== null);
-
+    const emptyHours = hourLoad.map((l, h) => l === 0 ? h : null).filter((h): h is number => h !== null);
     if (emptyHours.length > 0) {
-      warnings.push(
-        `Diet gets nothing during hour${
-          emptyHours.length > 1 ? 's' : ''
-        } ${emptyHours.join(', ')} of the cycle — increase max spread, add more relays, or raise crop surplus to close the gap.`
-      );
+      warnings.push(`Diet gets nothing during hour${emptyHours.length > 1 ? 's' : ''} ${emptyHours.join(', ')} of the cycle — increase max spread, add more relays, or raise crop surplus.`);
     } else {
-      const max = Math.max(...hourLoad);
-      const min = Math.min(...hourLoad);
-      if (max > min * 1.5) {
-        warnings.push(
-          `Deliveries to Diet are uneven across the cycle — busiest hour gets ${Math.round(
-            max
-          )} crop while the quietest gets ${Math.round(min)}.`
-        );
-      }
+      const max = Math.max(...hourLoad), min = Math.min(...hourLoad);
+      if (max > min * 1.5) warnings.push(`Deliveries to Diet are uneven — busiest hour gets ${Math.round(max)} crop, quietest gets ${Math.round(min)}.`);
     }
   }
 
-  // Within an hour that multiple routes share, minutes are spread out too
-  // so they don't all land at the same instant.
-  const byHour = new Map<number, (typeof otherStats)[number][]>();
+  const byHour = new Map<number, typeof relayStats[number][]>();
   for (const stat of dietBound) {
     const hour = phaseHourByVillage.get(stat.village)!;
     if (!byHour.has(hour)) byHour.set(hour, []);
     byHour.get(hour)!.push(stat);
   }
 
-  const sourceCapacityPerMerchant = source
+  const sourceCapPerMerchant = source
     ? merchantCapacity(tribe, source.tradeOfficeLevel, allianceBonusPercent)
     : 0;
+
+  // ── Leg building ──────────────────────────────────────────────────────────
+  const relayDepartureMinute = new Map<RouteVillageInput, number>();
+
+  const pushLegToDiet = (stat: typeof relayStats[number], outflow: number, departure: number, arrival: number) => {
+    if (outflow <= 0) return;
+    const mpf = ceilMerchants((outflow * stat.K) / stat.capacityPerMerchant);
+    if (mpf > stat.merchantsPerFiring) {
+      warnings.push(`${stat.village.name} can't sustain ${Math.round(outflow)} crop/hour to Diet — max is ${Math.round(stat.cropPerHour)} crop/hour.`);
+    }
+    legs.push({ fromVillage: stat.village.name, toVillage: 'Diet', cropPerHour: outflow, merchantsPerFiring: mpf, intervalHours: stat.K, departureMinute: departure, arrivalMinute: arrival });
+  };
 
   for (const stat of dietBound) {
     const hour = phaseHourByVillage.get(stat.village)!;
     const group = byHour.get(hour)!;
     const indexInGroup = group.indexOf(stat);
     const minuteInHour = Math.round((indexInGroup * 60) / group.length);
-    const targetArrivalMinute = hour * 60 + ((minuteInHour + arrivalOffsetMinutes) % 60);
+    const arrival = hour * 60 + ((minuteInHour + arrivalOffsetMinutes) % 60);
+    const relayDep = modMinutes(arrival - stat.oneWayHours * 60, stat.K * 60);
+    relayDepartureMinute.set(stat.village, relayDep);
 
-    const incoming = fromSource.get(stat.village);
-    if (incoming && source) {
-      const relayDeparture = modMinutes(
-        targetArrivalMinute - stat.oneWayHours * 60,
-        stat.K * 60
-      );
-      // The latest a delivery can land and still leave the relay time to
-      // forward it onward. Source's own leg runs on its own (usually
-      // shorter) cycle, so its departure/arrival display is expressed
-      // relative to that cycle, not the relay's.
-      const latestSafeArrivalAtRelay = relayDeparture - BUFFER_MINUTES;
-      const sourceDeparture = modMinutes(
-        latestSafeArrivalAtRelay - incoming.oneWayHours * 60,
-        incoming.sourceK * 60
-      );
-      const arrivalAtRelay = modMinutes(
-        latestSafeArrivalAtRelay,
-        incoming.sourceK * 60
-      );
+    const srcIn = fromSource.get(stat.village);
+    const hubIn = fromHub.get(stat.village);
+    const outflow = stat.village.cropSurplusPerHour + (srcIn?.cropPerHour ?? 0) + (hubIn?.cropPerHour ?? 0);
+    pushLegToDiet(stat, outflow, relayDep, arrival);
 
+    // Source → relay direct leg
+    if (srcIn && source) {
+      const latestSafe = relayDep - BUFFER_MINUTES;
       legs.push({
         fromVillage: source.name,
         toVillage: stat.village.name,
-        cropPerHour: incoming.cropPerHour,
-        merchantsPerFiring: ceilMerchants(
-          (incoming.cropPerHour * incoming.sourceK) / sourceCapacityPerMerchant
-        ),
-        intervalHours: incoming.sourceK,
-        departureMinute: sourceDeparture,
-        arrivalMinute: arrivalAtRelay,
+        cropPerHour: srcIn.cropPerHour,
+        merchantsPerFiring: ceilMerchants((srcIn.cropPerHour * srcIn.K) / sourceCapPerMerchant),
+        intervalHours: srcIn.K,
+        departureMinute: modMinutes(latestSafe - srcIn.oneWayHours * 60, srcIn.K * 60),
+        arrivalMinute: modMinutes(latestSafe, srcIn.K * 60),
       });
+    }
+  }
 
-      pushLegToDiet(
-        stat,
-        stat.village.cropSurplusPerHour + incoming.cropPerHour,
-        relayDeparture,
-        targetArrivalMinute
-      );
-    } else {
-      const departureMinute = modMinutes(
-        targetArrivalMinute - stat.oneWayHours * 60,
-        stat.K * 60
-      );
-      pushLegToDiet(
-        stat,
-        stat.village.cropSurplusPerHour,
-        departureMinute,
-        targetArrivalMinute
-      );
+  // Hub → relay legs
+  for (const [hub, maxAllocs] of hubMaxAllocations) {
+    const srcToHub = fromSource.get(hub);
+    if (!srcToHub) continue;
+    const totalHubCrop = hub.cropSurplusPerHour + srcToHub.cropPerHour;
+    const maxFwd = [...maxAllocs.values()].reduce((s, a) => s + a.cropPerHour, 0);
+    if (maxFwd <= 0) continue;
+    const scale = Math.min(1, totalHubCrop / maxFwd);
+    const hubCap = merchantCapacity(tribe, hub.tradeOfficeLevel, allianceBonusPercent);
+
+    for (const [relay, maxA] of maxAllocs) {
+      const scaled = maxA.cropPerHour * scale;
+      if (scaled <= 0) continue;
+      const relayDep = relayDepartureMinute.get(relay);
+      if (relayDep === undefined) continue;
+      const latestSafe = relayDep - BUFFER_MINUTES;
+      legs.push({
+        fromVillage: hub.name,
+        toVillage: relay.name,
+        cropPerHour: scaled,
+        merchantsPerFiring: ceilMerchants((scaled * maxA.K) / hubCap),
+        intervalHours: maxA.K,
+        departureMinute: modMinutes(latestSafe - maxA.oneWayHours * 60, maxA.K * 60),
+        arrivalMinute: modMinutes(latestSafe, maxA.K * 60),
+      });
+    }
+  }
+
+  // Source → hub legs
+  if (source) {
+    for (const [hub, alloc] of fromSource) {
+      if (!hubMaxAllocations.has(hub)) continue; // direct relays handled above
+      const maxAllocs = hubMaxAllocations.get(hub)!;
+      const hubRelayDeps = [...maxAllocs.keys()].map(r => relayDepartureMinute.get(r) ?? Infinity);
+      const earliestDep = Math.min(...hubRelayDeps);
+      const latestSafe = isFinite(earliestDep) ? earliestDep - BUFFER_MINUTES : 0;
+      legs.push({
+        fromVillage: source.name,
+        toVillage: hub.name,
+        cropPerHour: alloc.cropPerHour,
+        merchantsPerFiring: ceilMerchants((alloc.cropPerHour * alloc.K) / sourceCapPerMerchant),
+        intervalHours: alloc.K,
+        departureMinute: modMinutes(latestSafe - alloc.oneWayHours * 60, alloc.K * 60),
+        arrivalMinute: modMinutes(latestSafe, alloc.K * 60),
+      });
     }
   }
 
   if (legs.length === 0 && warnings.length === 0) {
-    warnings.push(
-      'No village has a crop surplus set — nothing to route. Set "Crop surplus/hour" for at least one village.'
-    );
+    warnings.push('No village has a crop surplus set — nothing to route. Set "Crop surplus/hour" for at least one village.');
   }
 
   return { legs, warnings };
