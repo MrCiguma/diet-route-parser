@@ -181,12 +181,34 @@ select {
   font-size: 13px;
 }
 
-.howto-body ol {
+.howto-body ol,
+.howto-body ul {
   margin: 10px 0 8px 18px;
 }
 
 .howto-body li {
   margin: 8px 0;
+}
+
+.howto-body h4 {
+  margin: 16px 0 4px;
+  color: #d7ddf2;
+  font-size: 13px;
+}
+
+.howto-body h4:first-child {
+  margin-top: 10px;
+}
+
+.howto-body p {
+  margin: 6px 0;
+}
+
+.howto-body code {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 12px;
 }
 
 .params .field {

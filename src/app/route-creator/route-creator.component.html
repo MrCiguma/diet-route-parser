@@ -134,7 +134,7 @@
               <button type="button" tabindex="-1" (click)="adjustDefaultTO(-1)">▼</button>
             </div>
           </div>
-          <span class="hint">applies to villages still at 0</span>
+          <span class="hint">applies to every village you haven't set by hand</span>
         </div>
 
         <table class="tbl">
@@ -243,60 +243,104 @@
   <details class="howto">
     <summary>How to use this (first time here? start here)</summary>
     <div class="howto-body">
-      <ol>
+      <h4>1. Parameters</h4>
+      <p>
+        Open <b>Parameters</b>. Set the <b>Diet village coordinates</b> (the
+        village you're feeding crop into), your <b>player tribe</b>, and your
+        alliance's <b>Merchant bonus</b> if it has one. Leave <b>Max route
+        spread</b> at "Hourly" unless a village is too far to route hourly, or
+        you want bigger, less frequent convoys.
+      </p>
+
+      <h4>2. Load your villages (two pastes, same box)</h4>
+      <p>
+        The two things this tool needs — how many merchants each village has,
+        and how much crop each village produces — live on different Travian
+        pages, so you paste them one after the other. Each <b>Parse
+        villages</b> merges into the table by village name; it only fills in
+        the fields that paste actually contains, so the order doesn't matter
+        and nothing gets overwritten.
+      </p>
+      <ul>
         <li>
-          Open <b>Parameters</b> and fill in the <b>Diet village
-          coordinates</b> (the village you're feeding crop into), your
-          <b>player tribe</b>, and your alliance's <b>merchant bonus</b> if it
-          has one. Leave <b>Max route spread</b> at "Hourly" unless a village
-          is too far away to route hourly, or you want to try squeezing out
-          more total crop by letting routes fire less often with bigger
-          convoys.
+          <b>Village overview &rarr; Overview</b> — the page listing each
+          village with its available merchants (the <code>x/y</code> merchant
+          column). This gives village names, merchant counts, and usually
+          coordinates.
         </li>
         <li>
-          Open <b>Paste village information</b> and paste in your Travian
-          village overview (resource + merchants table, plus the "Currently
-          building" list further down the page — copy the whole page). Click
-          <b>Parse villages</b>. Skip this step if you opened a shared link
-          that already came with villages built in.
+          <b>Resource production overview</b> (Village overview &rarr;
+          Resources &rarr; Production) — the table where each village row ends
+          with its hourly crop production. This fills in <b>Crop
+          surplus/hour</b>.
+        </li>
+      </ul>
+      <p>
+        Paste one, click <b>Parse villages</b>, paste the other, click it
+        again. Copy the whole page each time — extra text is ignored. Village
+        groups / coordinate lists on either page are picked up automatically.
+        <b>Clear villages</b> wipes the table to start over. Skip this whole
+        step if you opened a shared link with villages already built in.
+      </p>
+
+      <h4>3. Check the table</h4>
+      <p>
+        Open <b>Trade office levels</b>. Set a <b>Default level</b> to apply
+        it to every village at once; editing a single village's level (or any
+        other cell) detaches that village so later default changes leave it
+        alone.
+      </p>
+      <p>
+        <b>Crop surplus/hour</b> is how much crop the village can spare on top
+        of its own consumption — the production paste fills this in, but check
+        it and adjust. A village at 0 sends nothing.
+      </p>
+      <p>
+        If one strong village should push its crop out <i>through</i> your
+        other villages before it reaches Diet, set its <b>Role</b> to
+        <b>Source</b>. Leave every role at "—" if each village just sends
+        straight to Diet on its own.
+      </p>
+
+      <h4>4. Generate routes</h4>
+      <p>
+        Click <b>Generate routes</b>. Each row is one recurring merchant
+        route: from, to, crop per shipment (merchants per firing in
+        brackets), how often it fires (every 1/2/3/4/6/8h), and its
+        departure / arrival minute. Arrivals at Diet are spread so every hour
+        of the cycle gets a delivery of roughly even size, even when a single
+        route only fires every few hours.
+      </p>
+
+      <h4>5. Read the warnings</h4>
+      <p>They tell you where the plan is constrained:</p>
+      <ul>
+        <li>
+          <b>"can only ship X of Y crop/hour to Diet"</b> — the village
+          produces more than its own merchants can carry that distance; the
+          rest stays put. Raise its trade office level, add merchants, or
+          shorten the distance.
         </li>
         <li>
-          Open <b>Trade office levels</b>. Set a <b>Default level</b> to
-          apply it to every village at once, then fine-tune individual
-          villages if some differ.
+          <b>"can't route any to Diet (no merchants or too far)"</b> — usually
+          means you haven't pasted the merchant page for that village yet.
         </li>
         <li>
-          In that same table, fill in each village's <b>Crop
-          surplus/hour</b> — how much crop it can spare on top of its own
-          consumption. A village left at 0 sends nothing.
+          <b>relay skipped — too far / too costly in merchants</b> — the
+          source can't sustain a route to it within the fleet it has.
         </li>
         <li>
-          If one village is meant to feed the others (a strong producer that
-          relays crop onward through your other villages before it reaches
-          Diet), mark it as the <b>Source</b> using its radio button. Leave
-          none selected if every village should just send straight to Diet
-          on its own.
+          <b>"couldn't be allocated"</b> — leftover source crop that no relay
+          or hub had capacity to take.
         </li>
-        <li>
-          Click <b>Generate routes</b>. Each row in the result is one
-          recurring merchant route: which village it leaves from, where it's
-          headed, how much crop, how many merchants, how often it fires (every
-          1/2/3/4/6/8h), and when it departs and arrives. Arrivals at Diet are
-          spaced so every hour gets at least one delivery of roughly even size,
-          even if any single route only fires every few hours.
-        </li>
-        <li>
-          Read the <b>warnings</b> below the table — they'll tell you if a
-          village can't keep up with what it's been asked to send, if a
-          relay was skipped for being too far or too costly in merchants, or
-          if some of the source's surplus couldn't be placed anywhere.
-        </li>
-        <li>
-          Use <b>Copy link</b> any time to save or share your exact setup —
-          opening that link again restores everything, including the
-          villages, without pasting anything back in.
-        </li>
-      </ol>
+      </ul>
+
+      <h4>6. Save it</h4>
+      <p>
+        <b>Copy link</b> stores your entire setup — villages included — in the
+        URL. Opening that link restores everything without pasting anything
+        back in.
+      </p>
     </div>
   </details>
 </div>
