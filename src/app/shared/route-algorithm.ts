@@ -334,18 +334,46 @@ export function computeRoutePlan(
   }
 
   // ── Scheduling ────────────────────────────────────────────────────────────
-  const dietBound = relayStats
-    .filter(s => s.village.cropSurplusPerHour > 0 || fromSource.has(s.village) || fromHub.has(s.village))
+  const dietCandidates = relayStats
+    .filter(s => s.village.cropSurplusPerHour > 0 || fromSource.has(s.village) || fromHub.has(s.village));
+
+  // A village can never send Diet more than its own merchant fleet sustains over
+  // the distance (stat.cropPerHour). Cap each village's Diet outflow at that and
+  // route only what fits — the rest stays in the village.
+  const deliverableToDiet = new Map<RouteVillageInput, number>();
+  const cannotRoute: string[] = [];
+  for (const stat of dietCandidates) {
+    const raw =
+      stat.village.cropSurplusPerHour +
+      (fromSource.get(stat.village)?.cropPerHour ?? 0) +
+      (fromHub.get(stat.village)?.cropPerHour ?? 0);
+    const capped = Math.min(raw, stat.cropPerHour);
+    if (capped <= 1e-6) {
+      cannotRoute.push(stat.village.name);
+      continue;
+    }
+    deliverableToDiet.set(stat.village, capped);
+    if (raw > stat.cropPerHour + 1e-6) {
+      warnings.push(
+        `${stat.village.name} can only ship ${Math.round(stat.cropPerHour)} of ${Math.round(raw)} crop/hour to Diet — capped by its merchants and distance; the rest stays in the village.`
+      );
+    }
+  }
+  if (cannotRoute.length) {
+    warnings.push(
+      `These villages have crop surplus but can't route any to Diet (no merchants or too far): ${cannotRoute.join(', ')}.`
+    );
+  }
+
+  const dietBound = dietCandidates
+    .filter(s => deliverableToDiet.has(s.village))
     .sort((a, b) => b.K - a.K);
 
   const hourLoad = new Array(CYCLE_HOURS).fill(0);
   const phaseHourByVillage = new Map<RouteVillageInput, number>();
 
   for (const stat of dietBound) {
-    const outflow =
-      stat.village.cropSurplusPerHour +
-      (fromSource.get(stat.village)?.cropPerHour ?? 0) +
-      (fromHub.get(stat.village)?.cropPerHour ?? 0);
+    const outflow = deliverableToDiet.get(stat.village)!;
     const cropPerFiring = outflow * stat.K;
     const firingsPerCycle = CYCLE_HOURS / stat.K;
     let bestPhase = 0, bestScore = Infinity;
@@ -384,10 +412,10 @@ export function computeRoutePlan(
 
   const pushLegToDiet = (stat: typeof relayStats[number], outflow: number, departure: number, arrival: number) => {
     if (outflow <= 0) return;
-    const mpf = ceilMerchants((outflow * stat.K) / stat.capacityPerMerchant);
-    if (mpf > stat.merchantsPerFiring) {
-      warnings.push(`${stat.village.name} can't sustain ${Math.round(outflow)} crop/hour to Diet — max is ${Math.round(stat.cropPerHour)} crop/hour.`);
-    }
+    const mpf = Math.min(
+      stat.merchantsPerFiring,
+      ceilMerchants((outflow * stat.K) / stat.capacityPerMerchant)
+    );
     legs.push({ fromVillage: stat.village.name, toVillage: 'Diet', cropPerHour: outflow, merchantsPerFiring: mpf, intervalHours: stat.K, departureMinute: departure, arrivalMinute: arrival });
   };
 
@@ -401,8 +429,7 @@ export function computeRoutePlan(
     relayDepartureMinute.set(stat.village, relayDep);
 
     const srcIn = fromSource.get(stat.village);
-    const hubIn = fromHub.get(stat.village);
-    const outflow = stat.village.cropSurplusPerHour + (srcIn?.cropPerHour ?? 0) + (hubIn?.cropPerHour ?? 0);
+    const outflow = deliverableToDiet.get(stat.village)!;
     pushLegToDiet(stat, outflow, relayDep, arrival);
 
     // Source → relay direct leg
