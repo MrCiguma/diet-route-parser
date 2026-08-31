@@ -250,6 +250,22 @@ export class RouteCreatorComponent implements OnInit {
       villages.push({ name, merchantsTotal: Number(merchantsMatch[2]) });
     }
 
+    // Crop production from the resources/production overview: rows of the form
+    // "<name> <wood> <clay> <iron> <crop>" (comma-grouped numbers, crop last).
+    const cropByName = new Map<string, number>();
+    for (const line of lines) {
+      const cells = line.split(/\t+/).map((c) => c.trim()).filter(Boolean);
+      if (cells.length < 5) continue;
+      const name = cells[0];
+      if (name === 'Village' || name.startsWith('Sum')) continue;
+      const last4 = cells.slice(-4);
+      if (!last4.every((n) => /^-?[\d,]+$/.test(n))) continue;
+      cropByName.set(name, Number(last4[3].replace(/,/g, '')));
+    }
+    for (const name of cropByName.keys()) {
+      if (!villages.some((v) => v.name === name)) villages.push({ name, merchantsTotal: 0 });
+    }
+
     const coordMatches = [...sanitized.matchAll(/\((-?\d+)\|(-?\d+)\)/g)];
     // Positional fallback is only trustworthy when the paste holds exactly one
     // coord per village (no extra coords from news feeds, group lists, etc.).
@@ -283,7 +299,7 @@ export class RouteCreatorComponent implements OnInit {
       merchantsTotal: v.merchantsTotal,
       tradeOfficeLevel: this.defaultTradeOfficeLevel,
       usesDefaultTO: true,
-      cropSurplusPerHour: 0,
+      cropSurplusPerHour: cropByName.get(v.name) ?? 0,
       role: 'relay' as VillageRole,
       };
     });
