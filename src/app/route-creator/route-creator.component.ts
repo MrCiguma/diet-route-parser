@@ -246,6 +246,9 @@ export class RouteCreatorComponent implements OnInit {
     }
 
     const coordMatches = [...sanitized.matchAll(/\((-?\d+)\|(-?\d+)\)/g)];
+    // Positional fallback is only trustworthy when the paste holds exactly one
+    // coord per village (no extra coords from news feeds, group lists, etc.).
+    const positionalOk = coordMatches.length === villages.length;
 
     // Prefer matching coords to the village's own [NN] tag (handles pastes where a
     // trailing "Village groups" block lists coords in a different order/count).
@@ -254,14 +257,24 @@ export class RouteCreatorComponent implements OnInit {
       if (!coordByTag.has(m[1])) coordByTag.set(m[1], { x: Number(m[2]), y: Number(m[3]) });
     }
 
+    // Match coords to the village name where it sits at the start of a line, with
+    // the coords on the same or the next line (the "Village groups" block layout).
+    const coordByName = (name: string): { x: number; y: number } | null => {
+      const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const m = sanitized.match(
+        new RegExp('(?:^|\\n)\\s*' + esc + '[^(\\n]*\\n?\\s*\\(\\s*(-?\\d+)\\s*\\|\\s*(-?\\d+)\\s*\\)')
+      );
+      return m ? { x: Number(m[1]), y: Number(m[2]) } : null;
+    };
+
     this.parsedVillages = villages.map((v, i) => {
       const tag = v.name.match(/\[(\d+)\]/)?.[1];
-      const tagged = tag ? coordByTag.get(tag) : undefined;
-      const fallback = coordMatches[i];
+      const matched = (tag ? coordByTag.get(tag) : undefined) ?? coordByName(v.name);
+      const fallback = positionalOk ? coordMatches[i] : undefined;
       return {
       name: v.name,
-      x: tagged ? tagged.x : fallback ? Number(fallback[1]) : null,
-      y: tagged ? tagged.y : fallback ? Number(fallback[2]) : null,
+      x: matched ? matched.x : fallback ? Number(fallback[1]) : null,
+      y: matched ? matched.y : fallback ? Number(fallback[2]) : null,
       merchantsTotal: v.merchantsTotal,
       tradeOfficeLevel: this.defaultTradeOfficeLevel,
       usesDefaultTO: true,
