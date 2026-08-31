@@ -19,6 +19,7 @@ interface ParsedVillage {
   y: number | null;
   merchantsTotal: number;
   tradeOfficeLevel: number;
+  usesDefaultTO: boolean;
   cropSurplusPerHour: number;
   role: VillageRole;
 }
@@ -117,6 +118,7 @@ export class RouteCreatorComponent implements OnInit {
 
   adjustLevel(v: ParsedVillage, delta: number): void {
     v.tradeOfficeLevel = Math.max(0, Math.min(20, v.tradeOfficeLevel + delta));
+    v.usesDefaultTO = false;
     this.onParamsChange();
   }
 
@@ -245,15 +247,28 @@ export class RouteCreatorComponent implements OnInit {
 
     const coordMatches = [...sanitized.matchAll(/\((-?\d+)\|(-?\d+)\)/g)];
 
-    this.parsedVillages = villages.map((v, i) => ({
+    // Prefer matching coords to the village's own [NN] tag (handles pastes where a
+    // trailing "Village groups" block lists coords in a different order/count).
+    const coordByTag = new Map<string, { x: number; y: number }>();
+    for (const m of sanitized.matchAll(/\[(\d+)\][^\[\n]*(?:\n\s*)?\(\s*(-?\d+)\s*\|\s*(-?\d+)\s*\)/g)) {
+      if (!coordByTag.has(m[1])) coordByTag.set(m[1], { x: Number(m[2]), y: Number(m[3]) });
+    }
+
+    this.parsedVillages = villages.map((v, i) => {
+      const tag = v.name.match(/\[(\d+)\]/)?.[1];
+      const tagged = tag ? coordByTag.get(tag) : undefined;
+      const fallback = coordMatches[i];
+      return {
       name: v.name,
-      x: coordMatches[i] ? Number(coordMatches[i][1]) : null,
-      y: coordMatches[i] ? Number(coordMatches[i][2]) : null,
+      x: tagged ? tagged.x : fallback ? Number(fallback[1]) : null,
+      y: tagged ? tagged.y : fallback ? Number(fallback[2]) : null,
       merchantsTotal: v.merchantsTotal,
       tradeOfficeLevel: this.defaultTradeOfficeLevel,
+      usesDefaultTO: true,
       cropSurplusPerHour: 0,
       role: 'relay' as VillageRole,
-    }));
+      };
+    });
     this.routePlan = null;
 
     // Apply pending source coords (backward compat)
@@ -269,7 +284,7 @@ export class RouteCreatorComponent implements OnInit {
 
   onDefaultTradeOfficeLevelChange(): void {
     for (const v of this.parsedVillages) {
-      if (v.tradeOfficeLevel === 0) v.tradeOfficeLevel = this.defaultTradeOfficeLevel;
+      if (v.usesDefaultTO) v.tradeOfficeLevel = this.defaultTradeOfficeLevel;
     }
     this.onParamsChange();
   }
@@ -319,6 +334,7 @@ function decodeVillages(raw: string): ParsedVillage[] {
       y: numberOrNull(y),
       merchantsTotal: Number(merchantsTotal) || 0,
       tradeOfficeLevel: Number(tradeOfficeLevel) || 0,
+      usesDefaultTO: false,
       cropSurplusPerHour: Number(cropSurplusPerHour) || 0,
       role,
     };
