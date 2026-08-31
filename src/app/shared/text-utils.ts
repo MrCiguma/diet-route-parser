@@ -6,5 +6,8 @@ export function sanitizeText(raw: string): string {
       return !(code === 0x200e || code === 0x200f || (code >= 0x202a && code <= 0x202e));
     })
     .join('')
-    .replace(/\r\n/g, '\n');
+    .replace(/\r\n/g, '\n')
+    // Normalize Unicode minus/dash variants (U+2212, figure/en/em dash) to ASCII hyphen
+    // so numeric parsing (e.g. negative coordinates) works.
+    .replace(/[‒–—−]/g, '-');
 }
