@@ -83,7 +83,15 @@ function cheapestInterval(roundTrip: number, maxSpreadHours: number) {
     if (K > maxSpreadHours) continue;
     const cohortsInFlight = Math.ceil(roundTrip / K);
     const merchantsPerUnit = cohortsInFlight * K;
-    if (!best || merchantsPerUnit < best.merchantsPerUnit) best = { K, cohortsInFlight, merchantsPerUnit };
+    // Same merchant-time cost: prefer the interval that ties up fewer merchant
+    // bodies at once (larger K), so distant relays stay under the fleet-share cap.
+    if (
+      !best ||
+      merchantsPerUnit < best.merchantsPerUnit ||
+      (merchantsPerUnit === best.merchantsPerUnit && cohortsInFlight < best.cohortsInFlight)
+    ) {
+      best = { K, cohortsInFlight, merchantsPerUnit };
+    }
   }
   return best ?? { K: 1, cohortsInFlight: Math.ceil(roundTrip), merchantsPerUnit: Math.ceil(roundTrip) };
 }
