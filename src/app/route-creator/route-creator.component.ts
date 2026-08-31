@@ -240,6 +240,7 @@ export class RouteCreatorComponent implements OnInit {
     const lines = sanitized.split('\n').map((l) => l.trim()).filter(Boolean);
 
     const villages: { name: string; merchantsTotal: number }[] = [];
+    const merchantNames = new Set<string>();
     for (const line of lines) {
       const cells = line.split(/\t+/).map((c) => c.trim()).filter(Boolean);
       if (cells.length < 6) continue;
@@ -248,6 +249,7 @@ export class RouteCreatorComponent implements OnInit {
       const merchantsMatch = cells[cells.length - 1].match(/^(\d+)\/(\d+)$/);
       if (!merchantsMatch) continue;
       villages.push({ name, merchantsTotal: Number(merchantsMatch[2]) });
+      merchantNames.add(name);
     }
 
     // Crop production from the resources/production overview: rows of the form
@@ -288,20 +290,40 @@ export class RouteCreatorComponent implements OnInit {
       return m ? { x: Number(m[1]), y: Number(m[2]) } : null;
     };
 
-    this.parsedVillages = villages.map((v, i) => {
+    // Merge into the existing list so the crop-production page and the merchant
+    // page can be pasted one after the other without clobbering each other. Each
+    // paste only updates the fields it actually carries.
+    villages.forEach((v, i) => {
       const tag = v.name.match(/\[(\d+)\]/)?.[1];
       const matched = (tag ? coordByTag.get(tag) : undefined) ?? coordByName(v.name);
       const fallback = positionalOk ? coordMatches[i] : undefined;
-      return {
-      name: v.name,
-      x: matched ? matched.x : fallback ? Number(fallback[1]) : null,
-      y: matched ? matched.y : fallback ? Number(fallback[2]) : null,
-      merchantsTotal: v.merchantsTotal,
-      tradeOfficeLevel: this.defaultTradeOfficeLevel,
-      usesDefaultTO: true,
-      cropSurplusPerHour: cropByName.get(v.name) ?? 0,
-      role: 'relay' as VillageRole,
-      };
+      const coords = matched
+        ? matched
+        : fallback
+          ? { x: Number(fallback[1]), y: Number(fallback[2]) }
+          : null;
+      const crop = cropByName.get(v.name);
+
+      let existing = this.parsedVillages.find((p) => p.name === v.name);
+      if (!existing) {
+        existing = {
+          name: v.name,
+          x: null,
+          y: null,
+          merchantsTotal: 0,
+          tradeOfficeLevel: this.defaultTradeOfficeLevel,
+          usesDefaultTO: true,
+          cropSurplusPerHour: 0,
+          role: 'relay' as VillageRole,
+        };
+        this.parsedVillages.push(existing);
+      }
+      if (coords) {
+        existing.x = coords.x;
+        existing.y = coords.y;
+      }
+      if (merchantNames.has(v.name)) existing.merchantsTotal = v.merchantsTotal;
+      if (crop !== undefined) existing.cropSurplusPerHour = crop;
     });
     this.routePlan = null;
 
@@ -313,6 +335,13 @@ export class RouteCreatorComponent implements OnInit {
       if (idx >= 0) this.parsedVillages[idx].role = 'source';
     }
 
+    this.onParamsChange();
+  }
+
+  clearVillages(): void {
+    this.parsedVillages = [];
+    this.villageInfoText = '';
+    this.routePlan = null;
     this.onParamsChange();
   }
 

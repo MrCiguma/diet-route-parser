@@ -100,7 +100,7 @@
       <div class="field">
         <textarea
           id="villageInfo"
-          placeholder="Paste village name, coordinates, available merchants…"
+          placeholder="Paste the village/merchant overview, then Parse. Paste the resource-production overview and Parse again — fields merge by village name."
           rows="10"
           [(ngModel)]="villageInfoText"
         ></textarea>
@@ -109,6 +109,7 @@
 
     <div class="meta">
       <button class="btn" (click)="parseVillageInfo()">Parse villages</button>
+      <button class="btn" (click)="clearVillages()" *ngIf="parsedVillages.length">Clear villages</button>
     </div>
   </div>
 
