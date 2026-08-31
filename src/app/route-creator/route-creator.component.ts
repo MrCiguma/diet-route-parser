@@ -122,6 +122,11 @@ export class RouteCreatorComponent implements OnInit {
     this.onParamsChange();
   }
 
+  onVillageTOChange(v: ParsedVillage): void {
+    v.usesDefaultTO = false;
+    this.onParamsChange();
+  }
+
   adjustSurplus(v: ParsedVillage, delta: number): void {
     v.cropSurplusPerHour = Math.max(0, v.cropSurplusPerHour + delta);
     this.onParamsChange();
